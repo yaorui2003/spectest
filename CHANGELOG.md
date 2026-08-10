@@ -2,6 +2,19 @@
 
 <!-- insert new changelog below this comment -->
 
+## [Unreleased]
+
+### Added
+
+- feat(extensions/testing): new built-in "Speckit Testing" extension for Spec-driven test-first verification with `@Spec` annotation traceability
+  - 4 commands: `speckit.testing.impact` (change impact analysis + risk grading), `speckit.testing.plan` (test plan generation), `speckit.testing.gate` (automated quality gate: unit + contract tests + `@Spec` scan + Spec-Code-Test consistency), `speckit.testing.report` (test results + Spec traceability matrix)
+  - 2 mandatory hooks (`optional: false`): `before_plan` -> `speckit.testing.impact`, `after_implement` -> `speckit.testing.gate`
+  - 5 code/doc templates: Java Service (with `@Spec` placeholders), JUnit5 unit test (with `@DisplayName` rule tags), contract test (contract mock, no service startup), test plan, Spec traceability matrix
+  - `@Spec` / `@Specs` Java annotation definition (`com.speckit.testing`, `RUNTIME` + `@Repeatable`)
+  - `@Spec` annotation scanner in 3 equivalent languages (Python/Bash/PowerShell) emitting a JSON coverage matrix (spec_rules, annotated_rules, unimplemented_rules, orphan_annotations, coverage_percent)
+  - `testing-config.yml` with risk-graded gate thresholds (high/medium/low) and branch-coverage floor
+  - Registered in `extensions/catalog.json` as a built-in extension
+
 ## [0.16.1] - 2026-08-07
 
 ### Changed

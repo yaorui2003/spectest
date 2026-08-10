@@ -1,0 +1,32 @@
+# Speckit Testing 扩展配置模板
+#
+# 本文件随扩展安装，项目可在
+# .specify/extensions/testing/testing-config.yml 覆盖。
+# 字段含义与默认值见 contracts/testing-config.md。
+
+# 门禁阈值与测试策略配置
+gate:
+  unit_test:
+    line_coverage_min: 80          # 行覆盖率最低值（%）
+    branch_coverage_min: 70        # 分支覆盖率最低值（%），任意风险均不低于此
+    pass_rate_min: 100             # 通过率（%）
+  contract_test:
+    pass_rate_min: 95              # 契约测试通过率（%）
+  spec_traceability:
+    spec_rule_coverage_min: 100    # @Spec 注解覆盖 Spec 规则的比例（%）
+    require_displayname_match: true # 单测 @DisplayName 必须与 @Spec 规则对齐
+
+# 风险分级阈值覆盖（impact 标注风险等级后，gate 按风险套用）
+risk_overrides:
+  high:
+    unit_test:
+      line_coverage_min: 90
+      pass_rate_min: 100
+    contract_test:
+      pass_rate_min: 100
+  medium:
+    unit_test:
+      line_coverage_min: 80
+  low:
+    unit_test:
+      line_coverage_min: 70

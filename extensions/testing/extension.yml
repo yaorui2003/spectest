@@ -1,0 +1,79 @@
+schema_version: "1.0"
+
+extension:
+  id: testing
+  name: Speckit Testing
+  version: 1.0.0
+  description: "Spec 驱动测试先行验证，含 @Spec 注解追溯与自动门禁"
+  author: speckit-core
+  repository: https://github.com/github/spec-kit
+  license: MIT
+  category: testing
+  effect: read-write
+
+requires:
+  speckit_version: ">=0.2.0"
+  commands:
+    - speckit.plan
+    - speckit.tasks
+    - speckit.implement
+
+provides:
+  commands:
+    - name: speckit.testing.impact
+      file: commands/speckit.testing.impact.md
+      description: "变更影响分析"
+    - name: speckit.testing.plan
+      file: commands/speckit.testing.plan.md
+      description: "测试计划生成"
+    - name: speckit.testing.gate
+      file: commands/speckit.testing.gate.md
+      description: "自动化门禁"
+    - name: speckit.testing.report
+      file: commands/speckit.testing.report.md
+      description: "测试报告"
+
+  templates:
+    - name: java-service-template
+      file: templates/java-service.template.java
+      description: "Java Service 代码模板（带 @Spec 注解占位符）"
+    - name: java-unit-test-template
+      file: templates/java-unit-test.template.java
+      description: "JUnit5 单测模板（带 @DisplayName 规则标注）"
+    - name: contract-test-template
+      file: templates/contract-test.template.java
+      description: "契约测试模板（基于 contract mock）"
+    - name: test-plan-template
+      file: templates/test-plan-template.md
+      description: "测试计划文档模板"
+    - name: spec-trace-matrix-template
+      file: templates/spec-trace-matrix.md
+      description: "Spec 追溯矩阵模板"
+
+  scripts:
+    - name: scan-spec-annotations
+      file: scripts/python/scan_spec_annotations.py
+      description: "@Spec 注解扫描脚本（Python 推荐）"
+      runtimes: [python, bash, powershell]
+
+  config:
+    - name: testing-config.yml
+      template: config/testing-config.template.yml
+      description: "门禁阈值与风险分级配置"
+      required: false
+
+hooks:
+  before_plan:
+    command: speckit.testing.impact
+    optional: false
+    description: "Spec 变更前自动做影响分析"
+  after_implement:
+    command: speckit.testing.gate
+    optional: false
+    description: "代码实现后自动跑门禁"
+
+tags:
+  - testing
+  - traceability
+  - gate
+  - spec-driven

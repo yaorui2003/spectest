@@ -62,6 +62,21 @@
         "workflow",
         "core"
       ]
+    },
+    "testing": {
+      "name": "Speckit Testing",
+      "id": "testing",
+      "version": "1.0.0",
+      "description": "Spec 驱动测试先行验证，含 @Spec 注解追溯与自动门禁（4 命令 + 2 钩子 + 5 模板 + @Spec 扫描）",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "bundled": true,
+      "tags": [
+        "testing",
+        "traceability",
+        "gate",
+        "spec-driven"
+      ]
     }
   }
 }
