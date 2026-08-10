@@ -1,0 +1,46 @@
+schema_version: "1.0"
+
+preset:
+  id: "testing-tdd"
+  name: "Speckit Testing TDD Enforcement"
+  version: "1.0.0"
+  description: "强制 TDD 任务顺序 + 预置宪法 Principle VI（@Spec 可追溯）+ implement 引用 @Spec 模板。配合 testing 扩展使用。"
+  author: "spec-kit-core"
+  repository: "https://github.com/github/spec-kit"
+  license: "MIT"
+
+requires:
+  # wrap/append 组合策略需 0.14.4+ 运行时解析基线（同 constitution-sync）
+  speckit_version: ">=0.14.4"
+
+provides:
+  templates:
+    # 预置宪法 Principle VI（Spec Traceability）-- replace 整个模板
+    - type: "template"
+      name: "constitution-template"
+      file: "templates/constitution-template.md"
+      description: "预置 Principle VI（Spec Traceability）的宪法模板，/speckit.constitution 生成时即含 @Spec 软约束"
+      replaces: "constitution-template"
+      strategy: "replace"
+
+    # 强制 TDD -- wrap 核心 tasks-template，前置 REQUIRED 覆盖指令
+    - type: "template"
+      name: "tasks-template"
+      file: "templates/tasks-template.md"
+      description: "强制测试必需（REQUIRED）+ 测试任务前置，覆盖核心模板的 OPTIONAL 表述"
+      replaces: "tasks-template"
+      strategy: "wrap"
+
+    # 强制 @Spec 注解 + 引用模板 -- append 到核心 implement 命令
+    - type: "command"
+      name: "speckit.implement"
+      file: "commands/speckit.implement.md"
+      description: "implement 时强制 @Spec 注解 + resolve java-service-template，落实宪法 Principle VI"
+      replaces: "speckit.implement"
+      strategy: "append"
+
+tags:
+  - "testing"
+  - "tdd"
+  - "traceability"
+  - "constitution"

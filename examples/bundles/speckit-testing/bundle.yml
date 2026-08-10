@@ -1,0 +1,31 @@
+schema_version: "1.0"
+
+bundle:
+  id: "speckit-testing"
+  name: "Speckit Testing"
+  version: "1.0.0"
+  role: "developer"
+  description: "Spec 驱动测试先行全套件：testing 扩展（4 命令 + 2 钩子 + @Spec 扫描 + 5 模板）+ testing-tdd preset（强制 TDD + 预置宪法 Principle VI + implement 引用 @Spec 模板）。一键装齐 Spec-Code-Test 三角一致性闭环。"
+  author: "spec-kit-core"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=0.14.4"
+  tools: []
+  mcp: []
+
+provides:
+  extensions:
+    - id: "testing"
+      version: "1.0.0"
+  presets:
+    - id: "testing-tdd"
+      version: "1.0.0"
+      priority: 10
+
+tags:
+  - "testing"
+  - "tdd"
+  - "traceability"
+  - "gate"
+  - "spec-driven"

@@ -48,6 +48,29 @@
         "templates",
         "compatibility"
       ]
+    },
+    "testing-tdd": {
+      "name": "Speckit Testing TDD Enforcement",
+      "id": "testing-tdd",
+      "version": "1.0.0",
+      "description": "强制 TDD 任务顺序 + 预置宪法 Principle VI（@Spec 可追溯）+ implement 引用 @Spec 模板",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "license": "MIT",
+      "bundled": true,
+      "requires": {
+        "speckit_version": ">=0.14.4"
+      },
+      "provides": {
+        "commands": 1,
+        "templates": 2
+      },
+      "tags": [
+        "testing",
+        "tdd",
+        "traceability",
+        "constitution"
+      ]
     }
   }
 }
