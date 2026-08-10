@@ -22,6 +22,7 @@ provides:
     - id: "testing-tdd"
       version: "1.0.0"
       priority: 10
+      strategy: "replace"
 
 tags:
   - "testing"
