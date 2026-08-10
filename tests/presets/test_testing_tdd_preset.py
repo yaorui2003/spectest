@@ -50,25 +50,27 @@ def test_constitution_template_seeds_principle_vi():
 
 # ---------- tasks-template（wrap，强制 TDD）----------
 
-def test_tasks_template_uses_wrap_strategy():
+def test_tasks_template_uses_replace_strategy():
     with (PRESET_DIR / "preset.yml").open() as f:
         m = yaml.safe_load(f)
     tasks_entry = next(
         t for t in m["provides"]["templates"] if t["name"] == "tasks-template"
     )
-    assert tasks_entry["strategy"] == "wrap"
+    assert tasks_entry["strategy"] == "replace"
 
 
-def test_tasks_template_wraps_core_with_override():
+def test_tasks_template_enforces_required_no_optional():
     f = PRESET_DIR / "templates" / "tasks-template.md"
     assert f.is_file()
     content = f.read_text(encoding="utf-8")
-    # wrap 策略必须含 {CORE_TEMPLATE} 占位符
-    assert "{CORE_TEMPLATE}" in content
-    # 强制 REQUIRED，覆盖核心的 OPTIONAL
+    # 强制 REQUIRED
     assert "REQUIRED" in content
-    # 测试任务前置
-    assert "测试任务" in content or "test task" in content.lower()
+    # 矛盾已消灭：不含 OPTIONAL 表述
+    assert "OPTIONAL" not in content
+    # 测试任务前置（TDD）
+    assert "TDD" in content or "test task" in content.lower()
+    # replace 不需要 wrap 的 {CORE_TEMPLATE} 占位符
+    assert "{CORE_TEMPLATE}" not in content
 
 
 # ---------- implement 命令（append，强制 @Spec）----------

@@ -23,13 +23,13 @@ provides:
       replaces: "constitution-template"
       strategy: "replace"
 
-    # 强制 TDD -- wrap 核心 tasks-template，前置 REQUIRED 覆盖指令
+    # 强制 TDD -- replace 核心 tasks-template，把 OPTIONAL 改 REQUIRED，消灭矛盾
     - type: "template"
       name: "tasks-template"
       file: "templates/tasks-template.md"
-      description: "强制测试必需（REQUIRED）+ 测试任务前置，覆盖核心模板的 OPTIONAL 表述"
+      description: "完整替换核心 tasks-template：测试必需（REQUIRED）+ 测试任务前置，消灭 OPTIONAL 矛盾"
       replaces: "tasks-template"
-      strategy: "wrap"
+      strategy: "replace"
 
     # 强制 @Spec 注解 + 引用模板 -- append 到核心 implement 命令
     - type: "command"
