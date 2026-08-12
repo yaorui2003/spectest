@@ -9,6 +9,9 @@ gate:
   unit_test:
     line_coverage_min: 80          # 行覆盖率最低值（%）
     branch_coverage_min: 70        # 分支覆盖率最低值（%），任意风险均不低于此
+    method_coverage_min: 80        # 方法覆盖率最低值（%）
+    instruction_coverage_min: 85   # 指令覆盖率最低值（%）
+    complexity_coverage_min: 70   # 圈复杂度覆盖率最低值（%）
     pass_rate_min: 100             # 通过率（%）
   contract_test:
     pass_rate_min: 95              # 契约测试通过率（%）
@@ -16,17 +19,32 @@ gate:
     spec_rule_coverage_min: 100    # @Spec 注解覆盖 Spec 规则的比例（%）
     require_displayname_match: true # 单测 @DisplayName 必须与 @Spec 规则对齐
 
+# 技术栈硬校验配置
+test_stack:
+  forbid_powermock: true           # 禁用 PowerMock（覆盖率失真）
+  forbid_springboottest: true      # 禁用 @SpringBootTest 起容器（契约测试用 WireMock）
+
 # 风险分级阈值覆盖（impact 标注风险等级后，gate 按风险套用）
+# 三档单调递减：high > medium > low
 risk_overrides:
   high:
     unit_test:
       line_coverage_min: 90
+      method_coverage_min: 90
+      instruction_coverage_min: 90
+      complexity_coverage_min: 80
       pass_rate_min: 100
     contract_test:
       pass_rate_min: 100
   medium:
     unit_test:
       line_coverage_min: 80
+      method_coverage_min: 80
+      instruction_coverage_min: 85
+      complexity_coverage_min: 70
   low:
     unit_test:
       line_coverage_min: 70
+      method_coverage_min: 70
+      instruction_coverage_min: 80
+      complexity_coverage_min: 60

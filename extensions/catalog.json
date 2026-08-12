@@ -66,8 +66,8 @@
     "testing": {
       "name": "Speckit Testing",
       "id": "testing",
-      "version": "1.0.0",
-      "description": "Spec 驱动测试先行验证，含 @Spec 注解追溯与自动门禁（4 命令 + 2 钩子 + 5 模板 + @Spec 扫描）",
+      "version": "1.1.0",
+      "description": "Spec 驱动测试先行验证，含 @Spec 注解追溯与自动门禁（4 命令 + 1 钩子 after_implement [impact,gate] + 5 模板 + 4 扫描脚本 + 技术栈必需前置 + 脚本化 + 硬校验）",
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
       "bundled": true,

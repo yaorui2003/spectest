@@ -13,8 +13,8 @@ description: "Speckit Testing 测试报告：校验门禁已执行，汇总测�
 ## 触发方式
 
 - **手动**：用户在 AI Agent 中直接调用本命令。
-- 不绑钩子（`after_implement` 已绑 `speckit.testing.gate`，本命令在 gate
-  通过后手动运行）。
+- 不绑钩子（`after_implement` 已绑 `speckit.testing.impact` + `speckit.testing.gate`
+  两条命令，本命令在 gate 通过后手动运行）。
 
 ## 输入
 

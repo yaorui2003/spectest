@@ -4,6 +4,12 @@
  * 用途：契约测试骨架模板，基于 contract mock（WireMock 或 MockServer）。
  * 项目首次接入扩展时复制到 src/test/java/{{package}}/contract/ 下并填充占位符。
  *
+ * 技术栈约定（必需前置）：
+ *   - JUnit 5 + WireMock（contract mock，不起容器）
+ *   - 禁用 @SpringBootTest 起容器（契约测试基于 WireMock stub，不需要真实服务）
+ *   - 禁用 PowerMock
+ *   - JaCoCo 覆盖率报告必需
+ *
  * 特点（来自 commands.md speckit.testing.plan 契约不变量）：
  *   - 不需启动真实服务，基于 contract mock 验证接口契约。
  *   - 每个契约接口：1 条正向 + 每错误码 1 条反向。

@@ -21,31 +21,34 @@ def test_preset_manifest_valid():
         m = yaml.safe_load(f)
     assert m["schema_version"] == "1.0"
     assert m["preset"]["id"] == "testing-tdd"
-    assert m["preset"]["version"] == "1.0.0"
+    assert m["preset"]["version"] == "1.1.0"
     assert m["requires"]["speckit_version"] == ">=0.14.4"
 
 
-def test_preset_provides_three_overrides():
+def test_preset_provides_four_overrides():
     with (PRESET_DIR / "preset.yml").open() as f:
         m = yaml.safe_load(f)
     names = {t["name"] for t in m["provides"]["templates"]}
     assert "constitution-template" in names
+    assert "spec-template" in names
     assert "tasks-template" in names
     assert "speckit.implement" in names
 
 
-# ---------- constitution-template（replace，预置 Principle VI）----------
+# ---------- constitution-template（replace，预置 Principle I 置首）----------
 
-def test_constitution_template_seeds_principle_vi():
+def test_constitution_template_seeds_principle_i():
     f = PRESET_DIR / "templates" / "constitution-template.md"
     assert f.is_file()
     content = f.read_text(encoding="utf-8")
-    # Principle VI 静态预置（非占位符）
-    assert "VI. Spec Traceability" in content
+    # Principle I 静态预置（非占位符，置首）
+    assert "I. Spec Traceability" in content
     assert "@Spec" in content
     assert "NON-NEGOTIABLE" in content
-    # 仍保留 Principles I-V 占位符供项目填充
-    assert "[PRINCIPLE_1_NAME]" in content
+    # Principle II 中文文档要求（v0.3 新增）
+    assert "II. 中文文档要求" in content or "中文文档" in content
+    # 仍保留可选占位符供项目填充（Principle III 起）
+    assert "[PRINCIPLE_3_NAME]" in content
 
 
 # ---------- tasks-template（wrap，强制 TDD）----------
@@ -84,6 +87,19 @@ def test_implement_command_uses_append_strategy():
     assert impl_entry["strategy"] == "append"
 
 
+def test_replace_strategy_templates():
+    """constitution-template 和 spec-template 均用 replace 策略。"""
+    with (PRESET_DIR / "preset.yml").open() as f:
+        m = yaml.safe_load(f)
+    for name in ("constitution-template", "spec-template", "tasks-template"):
+        entry = next(
+            t for t in m["provides"]["templates"] if t["name"] == name
+        )
+        assert entry["strategy"] == "replace", (
+            f"{name} 应使用 replace 策略，实际 {entry['strategy']}"
+        )
+
+
 def test_implement_command_enforces_spec_annotation():
     f = PRESET_DIR / "commands" / "speckit.implement.md"
     assert f.is_file()
@@ -91,8 +107,8 @@ def test_implement_command_enforces_spec_annotation():
     assert "@Spec" in content
     # 引用 java-service-template 模板
     assert "java-service-template" in content
-    # 引用宪法 Principle VI
-    assert "Principle VI" in content or "Spec Traceability" in content
+    # 引用宪法 Principle I（v0.3: Spec Traceability 置首）
+    assert "Principle I" in content or "Spec Traceability" in content
 
 
 # ---------- catalog 注册 ----------

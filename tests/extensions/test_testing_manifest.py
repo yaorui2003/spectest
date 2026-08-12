@@ -4,12 +4,15 @@
 ``specs/001-speckit-testing-ext/contracts/manifest-schema.md``：
 
 - ``schema_version == "1.0"``
-- ``extension.id == "testing"``、``version == "1.0.0"``
+- ``extension.id == "testing"``、``version == "1.1.0"``（v0.3 升版）
 - ``requires.speckit_version == ">=0.2.0"``
 - ``hooks`` 为顶层字段（不在 ``provides`` 内）
-- ``hooks.before_plan`` / ``hooks.after_implement`` 命令与 optional
+- v0.3: ``hooks.before_plan`` 已移除；``hooks.after_implement`` 改为列表形式
+  ``[impact, gate]``（impact 在前产出风险、gate 在后消费）
 - ``provides.commands`` 4 个，命名匹配 ``^speckit\\.testing\\.[a-z]+$``
 - ``provides.templates`` 5 个，命名匹配 ``^[a-z-]+$``
+- ``provides.scripts`` 4 个（scan-spec-annotations + validate-spec-format
+  + parse-test-results + scan-test-stack）
 """
 
 from __future__ import annotations
@@ -42,7 +45,7 @@ def test_schema_version(manifest):
 def test_extension_identity(manifest):
     ext = manifest["extension"]
     assert ext["id"] == "testing"
-    assert ext["version"] == "1.0.0"
+    assert ext["version"] == "1.1.0"
 
 
 def test_requires_speckit_version(manifest):
@@ -56,16 +59,26 @@ def test_hooks_is_top_level_not_in_provides(manifest):
     assert "hooks" not in manifest.get("provides", {}), "hooks 不得放在 provides 内"
 
 
-def test_hooks_before_plan(manifest):
-    hook = manifest["hooks"]["before_plan"]
-    assert hook["command"] == "speckit.testing.impact"
-    assert hook["optional"] is False
+def test_hooks_before_plan_removed(manifest):
+    """v0.3: before_plan 钩子已移除（impact 移至 after_implement）。"""
+    assert "before_plan" not in manifest["hooks"], (
+        "before_plan 钩子应已移除（v0.3: impact 移至 after_implement）"
+    )
 
 
-def test_hooks_after_implement(manifest):
+def test_hooks_after_implement_is_list(manifest):
+    """v0.3: after_implement 改为列表形式 [impact, gate]，impact 在前。"""
     hook = manifest["hooks"]["after_implement"]
-    assert hook["command"] == "speckit.testing.gate"
-    assert hook["optional"] is False
+    assert isinstance(hook, list), (
+        "after_implement 应为列表形式（v0.3: impact + gate 同事件，按序执行）"
+    )
+    assert len(hook) == 2, f"after_implement 应含 2 条命令（impact + gate），实际 {len(hook)}"
+    # impact 在前
+    assert hook[0]["command"] == "speckit.testing.impact"
+    assert hook[0]["optional"] is False
+    # gate 在后
+    assert hook[1]["command"] == "speckit.testing.gate"
+    assert hook[1]["optional"] is False
 
 
 def test_provides_commands_count_and_naming(manifest):
@@ -153,19 +166,19 @@ def test_declared_config_files_exist(manifest):
 def test_hook_commands_are_provided(manifest):
     """hooks 声明的命令必须在 provides.commands 中有对应条目。
 
-    - before_plan -> speckit.testing.impact
-    - after_implement -> speckit.testing.gate
-
-    两者都必须在 provides.commands 列表中提供，否则钩子触发时
-    找不到对应命令实现。
+    v0.3: after_implement 为列表形式 [impact, gate]，两者都必须在
+    provides.commands 列表中提供。
     """
     hooks = manifest["hooks"]
     provided_names = {c["name"] for c in manifest["provides"]["commands"]}
     missing: list[str] = []
     for hook_name, hook_def in hooks.items():
-        cmd = hook_def["command"]
-        if cmd not in provided_names:
-            missing.append(f"{hook_name} -> {cmd}")
+        # v0.3: after_implement 是列表形式（每项含 command 字段）
+        entries = hook_def if isinstance(hook_def, list) else [hook_def]
+        for entry in entries:
+            cmd = entry["command"]
+            if cmd not in provided_names:
+                missing.append(f"{hook_name} -> {cmd}")
     assert not missing, (
         f"hooks 声明的命令未在 provides.commands 中提供: {missing}"
     )

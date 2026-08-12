@@ -26,20 +26,102 @@ scripts:
 - 用户项目业务代码（`.java` 源文件，含 `@Spec` 注解）
 - 测试代码（单测 + 契约测试，单测带 `@DisplayName` 规则标注）
 - `spec.md`（`business_rules` 规则编号清单）
-- `ImpactReport` 产物（取 `risk_level` 套阈值）
+- `ImpactReport` 产物（取 `risk_level` 套阈值；after_implement 时由
+  `speckit.testing.impact` 在本命令前产出）
 - `testing-config.yml`（阈值与风险覆盖配置）
 
+## 技术栈前置要求（REQUIRED）
+
+本门禁针对 Java 项目，以下技术栈为**必需前置条件**（默认用户已配置）：
+
+| 组件 | 作用 | 必需性 |
+|---|---|---|
+| JUnit 4/5 | 测试框架 | REQUIRED |
+| Mockito | Mock 依赖（`@Mock` / `@InjectMocks`） | REQUIRED |
+| Surefire（`mvn test`） | 测试执行 + surefire-reports 生成 | REQUIRED |
+| JaCoCo | 覆盖率插桩（line/branch/method/instruction/complexity） | REQUIRED |
+
+**禁用**：
+
+- **PowerMock** -- 覆盖率失真，门禁判定为 FAIL（由技术栈扫描脚本检出）
+- **`@SpringBootTest` 起容器** -- 契约测试基于 WireMock contract mock、
+  单测基于 Mockito，均不起容器；起容器的测试不属于本门禁范围且拖慢执行
+
+> **不降级原则**：`mvn test` 执行后若 `target/surefire-reports/` 或
+> `target/site/jacoco/jacoco.xml` 缺失，判定 **FAIL**（通过率/覆盖率指标
+> 不可用 = 未达标），输出修复建议（添加 Surefire/JaCoCo 插件配置，参考
+> 下方"JaCoCo/Surefire 配置参考"）。唯一降级场景为项目非 Java（无
+> `java`/`mvn` 可执行），见下方"降级：无 Java 环境"。
+
 ## 处理逻辑
+
+> **Spec 格式预检（建议）**：可调用
+> `scripts/{bash,powershell,python}/validate-spec-format.{sh,ps1,py}`
+> 校验 spec.md 的 Business Rules 段格式（规则编号连续性）。此为建议项，
+> 不阻断门禁（warning 级别）。
 
 ### 步骤 1：执行单测与契约测试（mvn test）
 
 在用户项目根目录执行 `mvn test`，收集：
 
 - **单测明细**：总数 / 通过 / 失败 / 行覆盖率 / 分支覆盖率 / 通过率
-  （行覆盖率与分支覆盖率取自 JaCoCo 报告 `target/site/jacoco/index.html`
-  或 `jacoco.xml`）
+  （覆盖率取自 JaCoCo 报告 `target/site/jacoco/jacoco.xml`）
 - **契约测试明细**：总数 / 通过 / 失败 / 通过率（契约测试以 `CT-` 前缀命名
   或位于 `src/test/java/.../contracts/` 包下识别）
+
+**报告缺失即 FAIL**：`mvn test` 执行后若 `target/surefire-reports/`
+缺失 -> 通过率指标不可用 -> FAIL；若 `target/site/jacoco/jacoco.xml`
+缺失 -> 覆盖率指标不可用 -> FAIL。输出修复建议（添加 Surefire/JaCoCo
+插件配置，见"JaCoCo/Surefire 配置参考"段）。不降级跳过。
+
+### JaCoCo/Surefire 配置参考
+
+> 本扩展不自动修改用户 `pom.xml`。若门禁因报告缺失 FAIL，按以下参考在
+> 项目 `pom.xml` 的 `<plugins>` 段添加配置后重跑门禁。
+
+Surefire（通常 Spring Boot archetype 已含，缺则补）：
+
+```xml
+<plugin>
+    <groupId>org.apache.maven.plugins</groupId>
+    <artifactId>maven-surefire-plugin</artifactId>
+    <version>3.2.5</version>
+</plugin>
+```
+
+JaCoCo（prepare-agent + report）：
+
+```xml
+<plugin>
+    <groupId>org.jacoco</groupId>
+    <artifactId>jacoco-maven-plugin</artifactId>
+    <version>0.8.11</version>
+    <executions>
+        <execution>
+            <id>prepare-agent</id>
+            <goals><goal>prepare-agent</goal></goals>
+        </execution>
+        <execution>
+            <id>report</id>
+            <phase>test</phase>
+            <goals><goal>report</goal></goals>
+        </execution>
+    </executions>
+</plugin>
+```
+
+### 步骤 1.5：技术栈硬校验（scan_test_stack）
+
+调用 `scripts/{bash,powershell,python}/scan-test-stack.{sh,ps1,py}`（按项目
+`--script sh|ps|py` 选择对应语言版本），扫描 `src/test/` 目录下全部 `.java`
+测试文件，检出禁用技术：
+
+- `org.powermock.*` 导入 -> type: powermock
+- `@SpringBootTest` 注解 -> type: springboottest
+
+若 `forbidden_findings` 非空 -> **直接 FAIL**，输出违规清单（文件、行号、
+违规内容），提示移除 PowerMock 依赖或将 `@SpringBootTest` 改为 Mockito +
+WireMock 契约测试。
 
 ### 步骤 2：调用 @Spec 注解扫描脚本
 
@@ -68,6 +150,11 @@ scripts:
 - `orphan_annotations`：代码有 `@Spec` 但 `spec.md` 无对应规则的注解
   （规则编号写错或 spec 已删该规则）
 
+> 此外，步骤 1 的 `mvn test` 结果（surefire-reports + jacoco.xml）由
+> `scripts/{bash,powershell,python}/parse-test-results.{sh,ps1,py}` 脚本
+> 解析为结构化 JSON（unit_tests/contract_tests/coverage 三段），供后续
+> 阈值判定使用。
+
 ### 步骤 3：解析单测 @DisplayName，校验一致性
 
 遍历单测方法，解析 `@DisplayName("Rn-描述")` 中的规则编号 `Rn`，校验：
@@ -86,11 +173,11 @@ scripts:
 读取 `ImpactReport.risk_level`（`high` / `medium` / `low`），按
 `testing-config.yml` 的 `risk_overrides` 与 `gate` 默认值合并后套用：
 
-| 风险 | 行覆盖率 | 分支覆盖率 | 单测通过率 | 契约通过率 | Spec 覆盖率 |
-|------|----------|------------|------------|------------|-------------|
-| high | >=90% | >=70% | 100% | 100% | 100% |
-| medium | >=80% | >=70% | 100% | >=95% | 100% |
-| low | >=70% | >=70% | 100% | >=95% | 100% |
+| 风险 | 行覆盖率 | 分支覆盖率 | 方法覆盖率 | 指令覆盖率 | 复杂度覆盖率 | 单测通过率 | 契约通过率 | Spec 覆盖率 |
+|------|----------|------------|------------|------------|--------------|------------|------------|-------------|
+| high | >=90% | >=70% | >=90% | >=90% | >=80% | 100% | 100% | 100% |
+| medium | >=80% | >=70% | >=80% | >=85% | >=70% | 100% | >=95% | 100% |
+| low | >=70% | >=70% | >=70% | >=80% | >=60% | 100% | >=95% | 100% |
 
 具体套用规则：取 `risk_overrides.<risk>` 下的覆盖值，与 `gate` 默认值
 合并（覆盖值优先），按合并后的阈值逐项比对步骤 1-3 的实际值。

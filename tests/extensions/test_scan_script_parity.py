@@ -395,3 +395,261 @@ def test_parity_empty_dir_ps(tmp_path: Path):
     py_out = _run_py(src_dir, spec_path)
     ps_out = _run_ps(src_dir, spec_path)
     _assert_parity(py_out, ps_out, "空目录边界", "pwsh")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# v0.3 新增脚本 parity 测试：validate_spec_format / parse_test_results / scan_test_stack
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── 路径常量 ──────────────────────────────────────────────────────────────────
+
+_VSF_PY = PROJECT_ROOT / "extensions" / "testing" / "scripts" / "python" / "validate_spec_format.py"
+_VSF_SH = PROJECT_ROOT / "extensions" / "testing" / "scripts" / "bash" / "validate-spec-format.sh"
+_VSF_PS = PROJECT_ROOT / "extensions" / "testing" / "scripts" / "powershell" / "validate-spec-format.ps1"
+
+_PTR_PY = PROJECT_ROOT / "extensions" / "testing" / "scripts" / "python" / "parse_test_results.py"
+_PTR_SH = PROJECT_ROOT / "extensions" / "testing" / "scripts" / "bash" / "parse-test-results.sh"
+_PTR_PS = PROJECT_ROOT / "extensions" / "testing" / "scripts" / "powershell" / "parse-test-results.ps1"
+
+_STS_PY = PROJECT_ROOT / "extensions" / "testing" / "scripts" / "python" / "scan_test_stack.py"
+_STS_SH = PROJECT_ROOT / "extensions" / "testing" / "scripts" / "bash" / "scan-test-stack.sh"
+_STS_PS = PROJECT_ROOT / "extensions" / "testing" / "scripts" / "powershell" / "scan-test-stack.ps1"
+
+
+# ── validate_spec_format parity ─────────────────────────────────────────────
+
+_VSF_SPEC = """\
+# Transfer
+
+## Business Rules
+
+- R1: 转账金额必须大于0
+- R2: 转账账户必须有足够余额
+- R3: 不可向冻结账户转账
+
+### Error Code Definitions
+
+| Error Code | HTTP Status | Description |
+|------------|------------|-------------|
+| INVALID_AMOUNT | 400 | 金额非法 |
+| ACCOUNT_NOT_FOUND | 404 | 账号不存在 |
+"""
+
+
+def _vsf_run_py(spec_path: Path) -> str:
+    r = subprocess.run(
+        [sys.executable, str(_VSF_PY), "--spec", str(spec_path), "--json"],
+        capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, f"py 退出码 {r.returncode}\n{r.stderr}"
+    return r.stdout
+
+
+def _vsf_run_sh(spec_path: Path) -> str:
+    r = subprocess.run(
+        ["bash", str(_VSF_SH), "--spec", str(spec_path), "--json"],
+        capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, f"sh 退出码 {r.returncode}\n{r.stderr}"
+    return r.stdout
+
+
+def _vsf_run_ps(spec_path: Path) -> str:
+    r = subprocess.run(
+        ["pwsh", "-NoProfile", "-File", str(_VSF_PS),
+         "-Spec", str(spec_path), "-Json"],
+        capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, f"ps 退出码 {r.returncode}\n{r.stderr}"
+    return r.stdout
+
+
+@requires_bash
+@pytest.mark.skipif(not _VSF_SH.exists(), reason="validate-spec-format.sh 不存在")
+def test_parity_validate_spec_format_sh(tmp_path: Path):
+    """validate_spec_format: Python 与 bash 输出字节级一致。"""
+    spec = tmp_path / "spec.md"
+    spec.write_text(_VSF_SPEC, encoding="utf-8")
+    py_out = _vsf_run_py(spec)
+    sh_out = _vsf_run_sh(spec)
+    _assert_parity(py_out, sh_out, "validate_spec_format", "bash")
+
+
+@pytest.mark.skipif(not HAS_PWSH, reason="pwsh 不可用")
+@pytest.mark.skipif(not _VSF_PS.exists(), reason="validate-spec-format.ps1 不存在")
+def test_parity_validate_spec_format_ps(tmp_path: Path):
+    """validate_spec_format: Python 与 PowerShell 输出字节级一致。"""
+    spec = tmp_path / "spec.md"
+    spec.write_text(_VSF_SPEC, encoding="utf-8")
+    py_out = _vsf_run_py(spec)
+    ps_out = _vsf_run_ps(spec)
+    _assert_parity(py_out, ps_out, "validate_spec_format", "pwsh")
+
+
+# ── parse_test_results parity ───────────────────────────────────────────────
+
+_PTR_SUREFIRE_XML = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.AccountServiceTest" tests="3" failures="0" errors="0">
+  <testcase name="shouldRejectZeroAmount" classname="com.example.AccountServiceTest" time="0.001"/>
+  <testcase name="shouldPassValidTransfer" classname="com.example.AccountServiceTest" time="0.002"/>
+  <testcase name="shouldRejectSelfTransfer" classname="com.example.AccountServiceTest" time="0.001"/>
+</testsuite>
+"""
+
+_PTR_CONTRACT_XML = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.TransferContractTest" tests="2" failures="1" errors="0">
+  <testcase name="shouldReturnSuccessOnValidRequest" classname="com.example.TransferContractTest" time="0.005"/>
+  <testcase name="shouldReturn400OnInvalidAmount" classname="com.example.TransferContractTest" time="0.003">
+    <failure message="expected 400 but was 200"/>
+  </testcase>
+</testsuite>
+"""
+
+_PTR_JACOCO_XML = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<report>
+  <counter type="LINE" missed="5" covered="50"/>
+  <counter type="BRANCH" missed="3" covered="15"/>
+  <counter type="METHOD" missed="2" covered="20"/>
+  <counter type="INSTRUCTION" missed="10" covered="90"/>
+  <counter type="COMPLEXITY" missed="3" covered="10"/>
+</report>
+"""
+
+
+def _ptr_make_fixture(tmp_path: Path) -> tuple[Path, Path]:
+    sf_dir = tmp_path / "surefire-reports"
+    sf_dir.mkdir()
+    (sf_dir / "TEST-AccountServiceTest.xml").write_text(_PTR_SUREFIRE_XML, encoding="utf-8")
+    (sf_dir / "TEST-TransferContractTest.xml").write_text(_PTR_CONTRACT_XML, encoding="utf-8")
+    jacoco = tmp_path / "jacoco.xml"
+    jacoco.write_text(_PTR_JACOCO_XML, encoding="utf-8")
+    return sf_dir, jacoco
+
+
+def _ptr_run_py(sf_dir: Path, jacoco: Path) -> str:
+    r = subprocess.run(
+        [sys.executable, str(_PTR_PY), "--surefire", str(sf_dir),
+         "--jacoco", str(jacoco), "--json"],
+        capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, f"py 退出码 {r.returncode}\n{r.stderr}"
+    return r.stdout
+
+
+def _ptr_run_sh(sf_dir: Path, jacoco: Path) -> str:
+    r = subprocess.run(
+        ["bash", str(_PTR_SH), "--surefire", str(sf_dir),
+         "--jacoco", str(jacoco), "--json"],
+        capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, f"sh 退出码 {r.returncode}\n{r.stderr}"
+    return r.stdout
+
+
+def _ptr_run_ps(sf_dir: Path, jacoco: Path) -> str:
+    r = subprocess.run(
+        ["pwsh", "-NoProfile", "-File", str(_PTR_PS),
+         "-Surefire", str(sf_dir), "-Jacoco", str(jacoco), "-Json"],
+        capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, f"ps 退出码 {r.returncode}\n{r.stderr}"
+    return r.stdout
+
+
+@requires_bash
+@pytest.mark.skipif(not _PTR_SH.exists(), reason="parse-test-results.sh 不存在")
+def test_parity_parse_test_results_sh(tmp_path: Path):
+    """parse_test_results: Python 与 bash 输出字节级一致。"""
+    sf_dir, jacoco = _ptr_make_fixture(tmp_path)
+    py_out = _ptr_run_py(sf_dir, jacoco)
+    sh_out = _ptr_run_sh(sf_dir, jacoco)
+    _assert_parity(py_out, sh_out, "parse_test_results", "bash")
+
+
+@pytest.mark.skipif(not HAS_PWSH, reason="pwsh 不可用")
+@pytest.mark.skipif(not _PTR_PS.exists(), reason="parse-test-results.ps1 不存在")
+def test_parity_parse_test_results_ps(tmp_path: Path):
+    """parse_test_results: Python 与 PowerShell 输出字节级一致。"""
+    sf_dir, jacoco = _ptr_make_fixture(tmp_path)
+    py_out = _ptr_run_py(sf_dir, jacoco)
+    ps_out = _ptr_run_ps(sf_dir, jacoco)
+    _assert_parity(py_out, ps_out, "parse_test_results", "pwsh")
+
+
+# ── scan_test_stack parity ───────────────────────────────────────────────────
+
+_STS_POWERMOCK_JAVA = """\
+package com.example;
+
+import org.powermock.api.mockito.PowerMockito;
+
+class PowerMockTest { }
+"""
+
+_STS_SPRINGBOOT_JAVA = """\
+package com.example;
+
+import org.springframework.boot.test.context.SpringBootTest;
+
+@SpringBootTest
+class IntegrationTest { }
+"""
+
+_STS_CLEAN_JAVA = """\
+package com.example;
+
+import org.junit.jupiter.api.Test;
+
+class CleanTest { }
+"""
+
+
+def _sts_make_fixture(tmp_path: Path) -> Path:
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "ATest.java").write_text(_STS_POWERMOCK_JAVA, encoding="utf-8")
+    (src / "BTest.java").write_text(_STS_CLEAN_JAVA, encoding="utf-8")
+    (src / "ZTest.java").write_text(_STS_SPRINGBOOT_JAVA, encoding="utf-8")
+    return src
+
+
+def _sts_run_py(source_dir: Path) -> str:
+    r = subprocess.run(
+        [sys.executable, str(_STS_PY), "--source", str(source_dir), "--json"],
+        capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, f"py 退出码 {r.returncode}\n{r.stderr}"
+    return r.stdout
+
+
+def _sts_run_sh(source_dir: Path) -> str:
+    r = subprocess.run(
+        ["bash", str(_STS_SH), "--source", str(source_dir), "--json"],
+        capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, f"sh 退出码 {r.returncode}\n{r.stderr}"
+    return r.stdout
+
+
+def _sts_run_ps(source_dir: Path) -> str:
+    r = subprocess.run(
+        ["pwsh", "-NoProfile", "-File", str(_STS_PS),
+         "-Source", str(source_dir), "-Json"],
+        capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, f"ps 退出码 {r.returncode}\n{r.stderr}"
+    return r.stdout
+
+
+@requires_bash
+@pytest.mark.skipif(not _STS_SH.exists(), reason="scan-test-stack.sh 不存在")
+def test_parity_scan_test_stack_sh(tmp_path: Path):
+    """scan_test_stack: Python 与 bash 输出字节级一致。"""
+    src = _sts_make_fixture(tmp_path)
+    py_out = _sts_run_py(src)
+    sh_out = _sts_run_sh(src)
+    _assert_parity(py_out, sh_out, "scan_test_stack", "bash")
+
+
+@pytest.mark.skipif(not HAS_PWSH, reason="pwsh 不可用")
+@pytest.mark.skipif(not _STS_PS.exists(), reason="scan-test-stack.ps1 不存在")
+def test_parity_scan_test_stack_ps(tmp_path: Path):
+    """scan_test_stack: Python 与 PowerShell 输出字节级一致。"""
+    src = _sts_make_fixture(tmp_path)
+    py_out = _sts_run_py(src)
+    ps_out = _sts_run_ps(src)
+    _assert_parity(py_out, ps_out, "scan_test_stack", "pwsh")

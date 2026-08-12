@@ -3,8 +3,8 @@ schema_version: "1.0"
 extension:
   id: testing
   name: Speckit Testing
-  version: 1.0.0
-  description: "Spec 驱动测试先行验证，含 @Spec 注解追溯与自动门禁"
+  version: 1.1.0
+  description: "Spec 驱动测试先行验证，含 @Spec 注解追溯与自动门禁（技术栈必需前置 + 脚本化 + 硬校验）"
   author: speckit-core
   repository: https://github.com/github/spec-kit
   license: MIT
@@ -55,6 +55,18 @@ provides:
       file: scripts/python/scan_spec_annotations.py
       description: "@Spec 注解扫描脚本（Python 推荐）"
       runtimes: [python, bash, powershell]
+    - name: validate-spec-format
+      file: scripts/python/validate_spec_format.py
+      description: "spec.md 格式验证脚本（Business Rules 段 + 规则编号连续性）"
+      runtimes: [python, bash, powershell]
+    - name: parse-test-results
+      file: scripts/python/parse_test_results.py
+      description: "Surefire + JaCoCo 测试结果解析脚本"
+      runtimes: [python, bash, powershell]
+    - name: scan-test-stack
+      file: scripts/python/scan_test_stack.py
+      description: "测试技术栈硬校验脚本（禁 PowerMock / @SpringBootTest）"
+      runtimes: [python, bash, powershell]
 
   config:
     - name: testing-config.yml
@@ -63,14 +75,13 @@ provides:
       required: false
 
 hooks:
-  before_plan:
-    command: speckit.testing.impact
-    optional: false
-    description: "Spec 变更前自动做影响分析"
   after_implement:
-    command: speckit.testing.gate
-    optional: false
-    description: "代码实现后自动跑门禁"
+    - command: speckit.testing.impact
+      optional: false
+      description: "实现后基于 git diff 做影响分析 + 风险分级"
+    - command: speckit.testing.gate
+      optional: false
+      description: "代码实现后自动跑门禁"
 
 tags:
   - testing

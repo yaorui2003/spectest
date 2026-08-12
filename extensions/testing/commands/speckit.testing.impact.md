@@ -4,23 +4,23 @@ description: "Speckit Testing 影响分析：解析 spec.md 变更与代码结�
 
 # Speckit Testing Impact
 
-本命令为 `before_plan` 钩子（`optional: false`，强制自动执行）的变更
+本命令为 `after_implement` 钩子（`optional: false`，与
+`speckit.testing.gate` 同事件，impact 在前产出风险、gate 在后消费）的变更
 影响分析。Spec 发生变更（新增/修改/删除 `business_rules`）后立即触发，
 解析变更范围、扫描代码结构依赖、按规则语义风险分级，产出 `ImpactReport`
-供后续 `speckit.testing.plan`、`speckit.testing.gate` 读取风险等级与
+供后续 `speckit.testing.gate` 读取风险等级与
 受影响规则清单。
 
 ## 触发方式
 
 - **手动**：用户在 AI Agent 中直接调用本命令。
-- **自动**：`before_plan` 钩子触发（`optional: false`）。AI Agent 读取
-  `.specify/extensions.yml` 中 `hooks.before_plan` 段，输出
-  `EXECUTE_COMMAND: speckit.testing.impact` 并实际调用本命令，等待结果
-  后再继续 `speckit.plan` 的规划流程。
+- **自动**：`after_implement` 钩子触发（`optional: false`，与 gate 同事件，
+  impact 在前执行）。AI Agent 读取 `.specify/extensions.yml` 中
+  `hooks.after_implement` 段（列表形式），按顺序执行 impact -> gate。
 
 ## 输入
 
-- `spec.md` 当前版本与上一版本 diff（首次新增能力时为全文）
+- **git diff + 源代码**：`git diff`（含 spec.md 与代码变更）+ 源码目录树
 - 仓库代码结构（用于依赖分析）：
   - 源码目录树（包/类/方法清单）
   - 现有 `@Spec` 注解分布（若已接入）
@@ -28,9 +28,9 @@ description: "Speckit Testing 影响分析：解析 spec.md 变更与代码结�
 
 ## 处理逻辑
 
-### 步骤 1：解析 spec.md 变更
+### 步骤 1：解析 git diff 中的 spec.md 变更
 
-对比 `spec.md` 当前版本与上一版本（git diff 或文件比对），提取
+从 git diff 中提取 spec.md 的变更（新增/修改/删除 business_rules），提取
 `business_rules` 段的变更：
 
 - **新增规则**：当前有、上一版本无的规则编号（如新增 `R8`）
@@ -120,27 +120,27 @@ impact_report_path: .specify/extensions/testing/impact-report.md
   `business_rules` 段（删除的规则不计入 `affected_rules`，仅计入
   `changed_rules` 中 `change_type: removed` 项）
 - `risk_level` 必须为 `high` / `medium` / `low` 之一
-- `before_plan` 触发时，`ImpactReport` 产物路径必须可被后续
-  `speckit.plan` 与 `speckit.tasks` 读取（默认写入
+- `after_implement` 触发时，`ImpactReport` 产物路径必须可被后续
+  `speckit.testing.gate` 读取（默认写入
   `.specify/extensions/testing/impact-report.md`）
 
 ## 后续动作
 
 `ImpactReport` 产出后，下游命令会读取：
 
-- `speckit.testing.plan` 读取 `risk_level` 套用验收阈值，读取
-  `affected_rules` 生成用例清单（建议运行测试计划命令：
-  `__SPECKIT_COMMAND_TESTING_PLAN__`，注：本命令不直接调用，由
-  `speckit.plan` 完成后再手动运行）
-- `speckit.testing.gate` 读取 `risk_level` 套用门禁阈值
+- `speckit.testing.gate` 读取 `risk_level` 套用门禁阈值，读取
+  `affected_rules` 做风险定向校验（建议运行门禁命令：
+  `__SPECKIT_COMMAND_TESTING_GATE__`，注：本命令不直接调用，
+  由 after_implement 钩子按列表顺序在 impact 之后自动调用 gate）
 
-注意：上方令牌 `__SPECKIT_COMMAND_TESTING_PLAN__` 由 spec-kit 注册时按
-当前 integration 的 `invoke_separator` 渲染为实际调用形式，勿硬编码
-具体调用路径。
+注意：`speckit.testing.plan`（令牌 `__SPECKIT_COMMAND_TESTING_PLAN__`）
+不再读取 ImpactReport 产物；上方 `__SPECKIT_COMMAND_TESTING_GATE__`
+令牌由 spec-kit 注册时按当前 integration 的 `invoke_separator` 渲染为
+实际调用形式，勿硬编码具体调用路径。
 
 ## 降级
 
-当 `spec.md` 无上一版本（首次新增能力）时，将全文视为新增，全部
+当 git diff 为空或无 spec.md 变更时，将全文视为新增，全部
 `business_rules` 规则计入 `changed_rules`（`change_type: added`），
 其余流程不变。
 

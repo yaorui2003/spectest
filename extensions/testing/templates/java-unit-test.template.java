@@ -4,12 +4,20 @@
  * 用途：JUnit5 + Mockito 单元测试骨架模板。
  * 项目首次接入扩展时，将本文件复制到 src/test/java/{{package}}/ 下并填充占位符。
  *
+ * 技术栈约定（必需前置）：
+ *   - JUnit 5（org.junit.jupiter）+ Mockito（@Mock/@InjectMocks/MockitoExtension）
+ *   - 禁用 PowerMock（覆盖率失真）
+ *   - 禁用 @SpringBootTest 起容器（单测基于 Mockito，不起容器）
+ *   - JaCoCo 覆盖率报告必需（target/site/jacoco/jacoco.xml）
+ *
  * 占位符（{{var}} 双花括号，由 AI 填充）：
  *   - {{package}}             : 测试包名
  *   - {{capability}}          : 能力名（如 transfer）
  *   - {{rule_id}}             : 规则编号 R\d+（如 R1）
  *   - {{service_class}}       : 被测 Service 类名
  *   - {{service_field}}       : 被测对象字段名（小驼峰）
+ *   - {{repository_interface}} : 依赖的 Repository 接口名
+ *   - {{repository_field}}    : Repository 字段名（小驼峰）
  *   - {{method_name}}         : 被测方法名
  *   - {{description}}         : @DisplayName 中的规则描述（如 转账金额为0应抛出INVALID_AMOUNT）
  *   - {{error_code}}          : 期望错误码

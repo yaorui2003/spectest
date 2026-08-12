@@ -3,39 +3,46 @@ schema_version: "1.0"
 preset:
   id: "testing-tdd"
   name: "Speckit Testing TDD Enforcement"
-  version: "1.0.0"
-  description: "强制 TDD 任务顺序 + 预置宪法 Principle VI（@Spec 可追溯）+ implement 引用 @Spec 模板。配合 testing 扩展使用。"
+  version: "1.1.0"
+  description: "强制 TDD 任务顺序（骨架先行 -> 单测先行 -> 契约测试 -> 业务代码）+ 预置宪法 Principle I（Spec Traceability 置首）+ spec-template 加 Business Rules 段 + implement 约定参考 + 技术栈。配合 testing 扩展使用。"
   author: "spec-kit-core"
   repository: "https://github.com/github/spec-kit"
   license: "MIT"
 
 requires:
-  # wrap/append 组合策略需 0.14.4+ 运行时解析基线（同 constitution-sync）
   speckit_version: ">=0.14.4"
 
 provides:
   templates:
-    # 预置宪法 Principle VI（Spec Traceability）-- replace 整个模板
+    # 预置宪法 -- replace 整个模板：Spec Traceability 置首（I）+ 中文文档（II）
     - type: "template"
       name: "constitution-template"
       file: "templates/constitution-template.md"
-      description: "预置 Principle VI（Spec Traceability）的宪法模板，/speckit.constitution 生成时即含 @Spec 软约束"
+      description: "预置 Principle I（Spec Traceability 置首）+ Principle II（中文文档要求）的宪法模板"
       replaces: "constitution-template"
       strategy: "replace"
 
-    # 强制 TDD -- replace 核心 tasks-template，把 OPTIONAL 改 REQUIRED，消灭矛盾
+    # spec-template -- replace 核心 spec 模板：加 Business Rules 段（REQUIRED）+ Error Code Definitions（可选）
+    - type: "template"
+      name: "spec-template"
+      file: "templates/spec-template.md"
+      description: "加 ## Business Rules（REQUIRED，R 编号连续）+ ### Error Code Definitions（可选段）"
+      replaces: "spec-template"
+      strategy: "replace"
+
+    # 强制 TDD -- replace 核心 tasks-template：骨架先行 + 单测先行 + 测试 REQUIRED
     - type: "template"
       name: "tasks-template"
       file: "templates/tasks-template.md"
-      description: "完整替换核心 tasks-template：测试必需（REQUIRED）+ 测试任务前置，消灭 OPTIONAL 矛盾"
+      description: "骨架先行 + 单测先行 + 测试 REQUIRED，消灭 OPTIONAL 矛盾"
       replaces: "tasks-template"
       strategy: "replace"
 
-    # 强制 @Spec 注解 + 引用模板 -- append 到核心 implement 命令
+    # 强制 @Spec 注解 + 约定参考 -- append 到核心 implement 命令
     - type: "command"
       name: "speckit.implement"
       file: "commands/speckit.implement.md"
-      description: "implement 时强制 @Spec 注解 + resolve java-service-template，落实宪法 Principle VI"
+      description: "implement 时强制 @Spec 注解 + 约定参考模板 + 技术栈 + 单测先行"
       replaces: "speckit.implement"
       strategy: "append"
 
@@ -44,3 +51,4 @@ tags:
   - "tdd"
   - "traceability"
   - "constitution"
+  - "spec-template"
