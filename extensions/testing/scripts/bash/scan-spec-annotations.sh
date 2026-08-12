@@ -64,7 +64,10 @@ SPEC_RULES=$(awk '
 # ── 2. 提取 annotations：遍历 .java 文件（按路径排序） ─────────────────
 # 每行输出: rule\tcapability\tdescription\tlocation
 # location = 包名.类名.方法名:@Spec行号
-mapfile -t JAVA_FILES < <(find "$SOURCE" -name '*.java' -type f | LC_ALL=C sort)
+JAVA_FILES=()
+while IFS= read -r f; do
+    JAVA_FILES+=("$f")
+done < <(find "$SOURCE" -name '*.java' -type f | LC_ALL=C sort)
 ANNOTATIONS=""
 if [[ ${#JAVA_FILES[@]} -gt 0 ]]; then
     ANNOTATIONS=$(awk '
