@@ -15,6 +15,15 @@
   - `testing-config.yml` with risk-graded gate thresholds (high/medium/low) and branch-coverage floor
   - Registered in `extensions/catalog.json` as a built-in extension
 
+- feat(presets/testing-tdd): companion preset enforcing TDD + constitution seeding + @Spec template reference
+  - 3 template/command overrides: constitution-template (replace, pre-seeds Principle VI Spec Traceability), tasks-template (replace, Tests REQUIRED eliminating the core "Tests are OPTIONAL" contradiction), speckit.implement command (append, mandates @Spec annotation + resolve java-service-template/java-unit-test-template/contract-test-template)
+  - Registered in `presets/catalog.json` as a built-in preset
+  - Closes 3 gaps the extension alone could not: constitution auto-seed, TDD OPTIONAL contradiction, implement template reference
+
+- feat(bundle/speckit-testing): bundle packaging extension + preset for one-command install
+  - Packages testing extension (1.0.0) + testing-tdd preset (1.0.0, priority 10)
+  - `specify bundle install speckit-testing` installs both in one operation
+
 ## [0.16.1] - 2026-08-07
 
 ### Changed

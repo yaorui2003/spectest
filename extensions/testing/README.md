@@ -52,13 +52,41 @@ public TransferResult transfer(...) { ... }
 门禁通过扫描 `@Spec` 注解自动校验"Spec 规则 -> 代码实现"覆盖完整性，
 单测侧通过 `@DisplayName("R1-...")` 实现双向对齐。
 
+## 配套预设 testing-tdd
+
+扩展只加新能力（命令/钩子/扫描），**不改 spec-kit 核心行为**。要让
+`/speckit.constitution` 自动预置 Principle VI、`/speckit.tasks` 强制 TDD
+（消灭核心 "Tests OPTIONAL"）、`/speckit.implement` 强制 @Spec + 引用模板，
+需配套安装 `testing-tdd` 预设：
+
+| 覆盖 | 策略 | 作用 |
+|------|------|------|
+| `constitution-template` | replace | 预置 Principle VI（Spec Traceability） |
+| `tasks-template` | replace | 测试 REQUIRED，消灭 OPTIONAL 矛盾，测试任务前置 |
+| `speckit.implement` 命令 | append | 强制 @Spec 注解 + resolve java-service-template 等模板 |
+
+详见 `presets/testing-tdd/`。
+
 ## 安装
 
-本扩展为 spec-kit 内置扩展：
+两种方式：
+
+**方式 A（推荐，dev 直装，调试期快速迭代）**：
 
 ```bash
-specify extension add testing
+# 装扩展
+specify extension add --dev <spec-kit>/extensions/testing
+# 装配套预设
+specify preset add --dev <spec-kit>/presets/testing-tdd --priority 10
 ```
+
+**方式 B（bundle 一键装，发布期）**：
+
+```bash
+specify bundle install speckit-testing   # 一键装扩展 + 预设
+```
+
+> 调试期建议方式 A（改源码直接生效，无需重装）。
 
 ## 配置
 
