@@ -144,9 +144,23 @@ AI 会伪造（声称 96% 实际 62.9%）。v0.4 把 gate 的**全部确定性�
 
 ## 安装
 
-两种方式：
+三种方式，任选其一：
 
-**方式 A（推荐，dev 直装，调试期快速迭代）**：
+**方式 A（Release 直装，推荐给终端用户，装在任何标准 spec-kit 上）**：
+
+```bash
+# 装扩展
+specify extension add testing \
+  --from https://github.com/yaorui2003/spectest/releases/download/v1.1.2/testing-1.1.2.zip
+# 装配套预设（预设会 replace 核心模板：宪法 / spec-template / tasks / implement）
+specify preset add testing-tdd \
+  --from https://github.com/yaorui2003/spectest/releases/download/v1.1.2/testing-tdd-1.1.2.zip
+```
+
+> `extension add --from` 对非 catalog 来源会弹"Untrusted Source"确认，属正常安全提示，
+> 按 `y` 继续即可。
+
+**方式 B（dev 直装，调试期快速迭代）**：
 
 ```bash
 # 装扩展
@@ -155,13 +169,26 @@ specify extension add --dev <spec-kit>/extensions/testing
 specify preset add --dev <spec-kit>/presets/testing-tdd --priority 10
 ```
 
-**方式 B（bundle 一键装，发布期）**：
+**方式 C（bundle 一键装，发布期，需扩展与预设已可解析）**：
 
 ```bash
 specify bundle install speckit-testing   # 一键装扩展 + 预设
 ```
 
-> 调试期建议方式 A（改源码直接生效，无需重装）。
+> 调试期建议方式 B（改源码直接生效，无需重装）。
+
+## 卸载 / 切回普通 spec-kit
+
+在任意标准 spec-kit 项目上，装上的东西可干净移除、恢复原样：
+
+```bash
+specify preset remove testing-tdd    # 移除预设，宪法/模板恢复 spec-kit 默认
+specify extension remove testing     # 移除扩展，命令/钩子/配置全部卸载
+```
+
+> 只想临时停用（保留安装）可用 `specify preset disable testing-tdd` /
+> `specify extension disable testing`，随时 `enable` 恢复。
+> `extension remove` 同样有确认提示，按 `y` 继续。
 
 ## 配置
 

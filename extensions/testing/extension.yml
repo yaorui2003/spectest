@@ -6,7 +6,7 @@ extension:
   version: 1.1.2
   description: "Spec 驱动测试先行验证，含 @Spec 注解追溯与自动门禁（技术栈必需前置 + 脚本化 + 硬校验）"
   author: speckit-core
-  repository: https://github.com/github/spec-kit
+  repository: https://github.com/yaorui2003/spectest
   license: MIT
   category: testing
   effect: read-write
