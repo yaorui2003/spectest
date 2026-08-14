@@ -157,11 +157,30 @@ specify preset add testing-tdd \
   --from https://raw.githubusercontent.com/yaorui2003/spectest/main/releases/testing-tdd-1.1.2.zip
 ```
 
-> 大陆网络下 `raw.githubusercontent.com` 的 DNS 可能解析到被墙 IP，python 无法下载。
-> 解决：在 `/etc/hosts` 固定 `185.199.111.133 raw.githubusercontent.com`（或换用
-> GitHub Release 版 URL：`https://github.com/yaorui2003/spectest/releases/download/v1.1.2/testing-1.1.2.zip`）。
 > `extension add --from` 对非 catalog 来源会弹"Untrusted Source"确认，属正常安全提示，
 > 按 `y` 继续即可。
+
+**方式 A'（大陆网络备选，GitHub 直连被墙时）**：`--from` 用 python 下载且无重试，
+大陆网络下可能超时。改用 curl（自动重试）下载 + `--dev` 本地安装：
+
+```bash
+# 下载并解压（--retry 应对间歇性连接失败）
+curl -fsS --retry 8 --retry-all-errors -o /tmp/ext-testing.zip \
+  https://raw.githubusercontent.com/yaorui2003/spectest/main/releases/testing-1.1.2.zip
+curl -fsS --retry 8 --retry-all-errors -o /tmp/ext-preset.zip \
+  https://raw.githubusercontent.com/yaorui2003/spectest/main/releases/testing-tdd-1.1.2.zip
+mkdir -p /tmp/ext-testing /tmp/ext-preset
+python3 -c "import zipfile; zipfile.ZipFile('/tmp/ext-testing.zip').extractall('/tmp/ext-testing')"
+python3 -c "import zipfile; zipfile.ZipFile('/tmp/ext-preset.zip').extractall('/tmp/ext-preset')"
+
+# 安装（注意 --dev 是 flag，路径作参数）
+specify extension add /tmp/ext-testing --dev
+specify preset add testing-tdd --dev /tmp/ext-preset --priority 10
+```
+
+> 也可在 `/etc/hosts` 固定 `185.199.111.133 raw.githubusercontent.com` 提升 raw 直连
+> 稳定性（需 sudo，一次性）。GitHub Release 版 URL：
+> `https://github.com/yaorui2003/spectest/releases/download/v1.1.2/testing-1.1.2.zip`。
 
 **方式 B（dev 直装，调试期快速迭代）**：
 
