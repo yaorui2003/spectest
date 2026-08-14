@@ -106,3 +106,24 @@ class TestPlanTemplateReference:
     def test_body_references_test_plan_template(self):
         body = _read_body(PLAN_MD.read_text(encoding="utf-8"))
         assert "test-plan-template" in body
+
+
+# ── Body: artifact path (v0.4) ───────────────────────────────────────────────
+
+
+class TestPlanArtifactPath:
+    """v0.4: test-plan 产物路径统一到 specs/<feature>/docs/test-plan.md
+    （废弃 .specify/extensions/testing/）。"""
+
+    def test_body_test_plan_path_in_docs(self):
+        body = _read_body(PLAN_MD.read_text(encoding="utf-8"))
+        assert "specs/<feature>/docs/test-plan.md" in body, (
+            "plan body 必须声明 specs/<feature>/docs/test-plan.md 产物路径"
+        )
+
+    def test_body_no_legacy_specify_path(self):
+        body = _read_body(PLAN_MD.read_text(encoding="utf-8"))
+        assert ".specify/extensions/testing/" not in body, (
+            "v0.4: 废弃 .specify/extensions/testing/ 产物路径，应改为 "
+            "specs/<feature>/docs/"
+        )

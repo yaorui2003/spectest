@@ -94,6 +94,54 @@ class TestReportTemplateReference:
         assert "spec-trace-matrix" in body
 
 
+# ── Body: artifact paths (v0.4) ──────────────────────────────────────────────
+
+
+class TestReportArtifactPath:
+    """v0.4: 产物路径统一到 specs/<feature>/docs/*.md（废弃
+    .specify/extensions/testing/，残留 .json 引用改 .md）。"""
+
+    def test_body_report_path_in_docs(self):
+        body = _read_body(REPORT_MD.read_text(encoding="utf-8"))
+        assert "specs/<feature>/docs/test-report.md" in body, (
+            "report body 必须声明 specs/<feature>/docs/test-report.md 产物路径"
+        )
+
+    def test_body_impact_report_reference_in_docs(self):
+        """引用 ImpactReport 产物的路径同步改为 specs/<feature>/docs/
+        impact-report.md。"""
+        body = _read_body(REPORT_MD.read_text(encoding="utf-8"))
+        assert "specs/<feature>/docs/impact-report.md" in body, (
+            "report body 引用 impact-report 路径应为 "
+            "specs/<feature>/docs/impact-report.md"
+        )
+
+    def test_body_gate_result_reference_in_docs(self):
+        """读取 GateResult 产物的路径改为 specs/<feature>/docs/gate-result.md。"""
+        body = _read_body(REPORT_MD.read_text(encoding="utf-8"))
+        assert "specs/<feature>/docs/gate-result.md" in body, (
+            "report body 引用 gate-result 路径应为 "
+            "specs/<feature>/docs/gate-result.md"
+        )
+
+    def test_body_no_legacy_specify_path(self):
+        body = _read_body(REPORT_MD.read_text(encoding="utf-8"))
+        assert ".specify/extensions/testing/" not in body, (
+            "v0.4: 废弃 .specify/extensions/testing/ 产物路径，应改为 "
+            "specs/<feature>/docs/"
+        )
+
+    def test_body_no_residual_json_artifact(self):
+        """v0.4: 残留 .json 产物引用改 .md（impact-report / gate-result）。"""
+        body = _read_body(REPORT_MD.read_text(encoding="utf-8"))
+        assert "impact-report.json" not in body, (
+            "impact-report.json 应改为 impact-report.md"
+        )
+        assert "gate-result.json" not in body, (
+            "gate-result.json 应改为 gate-result.md"
+        )
+
+
 # ── Body: sibling command token ──────────────────────────────────────────────
 
 

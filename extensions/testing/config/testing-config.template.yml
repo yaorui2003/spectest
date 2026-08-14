@@ -48,3 +48,9 @@ risk_overrides:
       method_coverage_min: 70
       instruction_coverage_min: 80
       complexity_coverage_min: 60
+
+# 对抗测试阶段配置（v0.4 新增）
+adversarial:
+  enabled: true              # 是否启用对抗测试阶段（默认 true）
+  max_iterations: 3          # 循环上限（默认 3）
+  critical_path_required: true # high 风险规则方法 MUST 至少 1 条对抗用例

@@ -111,7 +111,7 @@ unit_test_count_estimate: 18
 rationale: R1 涉及资金校验（high），触发全量测试策略
 
 ### 产物路径
-impact_report_path: .specify/extensions/testing/impact-report.md
+impact_report_path: specs/<feature>/docs/impact-report.md
 ```
 
 ## 契约不变量
@@ -122,7 +122,7 @@ impact_report_path: .specify/extensions/testing/impact-report.md
 - `risk_level` 必须为 `high` / `medium` / `low` 之一
 - `after_implement` 触发时，`ImpactReport` 产物路径必须可被后续
   `speckit.testing.gate` 读取（默认写入
-  `.specify/extensions/testing/impact-report.md`）
+  `specs/<feature>/docs/impact-report.md`）
 
 ## 后续动作
 

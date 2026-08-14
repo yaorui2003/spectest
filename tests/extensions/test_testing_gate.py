@@ -4,8 +4,8 @@ T009 - Tests for the speckit.testing.gate command markdown.
 Validates that `extensions/testing/commands/speckit.testing.gate.md`:
 - exists
 - has frontmatter with a description
-- declares the `scripts:` block referencing the @Spec annotation scanner
-  (sh / ps / py three keys, all pointing at scan-spec-annotations.*)
+- declares the `scripts:` block referencing the run_gate orchestrator
+  (sh / ps / py three keys, all pointing at run-gate.*)
 - body covers the four gate checks: unit-test execution, contract-test
   execution, @Spec annotation scanning, DisplayName consistency
 - body references the scanner JSON output fields (unimplemented_rules /
@@ -14,6 +14,8 @@ Validates that `extensions/testing/commands/speckit.testing.gate.md`:
   (high / medium / low -> thresholds)
 - body contains FAIL commit-blocking instruction and the no-Java
   degradation (static @Spec scan only)
+- v0.4: gate-result 产物路径统一到 specs/<feature>/docs/gate-result.md
+  （由 run_gate 脚本写入，AI 仅读结果）
 
 Reference: specs/001-speckit-testing-ext/contracts/commands.md (command 3)
            specs/001-speckit-testing-ext/contracts/testing-config.md
@@ -85,22 +87,43 @@ class TestGateScriptsFrontmatter:
         fm = _read_frontmatter(GATE_MD.read_text(encoding="utf-8"))
         assert "py:" in fm, "scripts: must contain py: key"
 
-    def test_scripts_reference_scan_spec_annotations(self):
-        """All three script keys must point at the scan-spec-annotations
-        scanner (file name stems may differ by language convention)."""
+    def test_scripts_reference_run_gate(self):
+        """All three script keys must point at the run_gate orchestrator
+        (v0.4: 门禁全逻辑下沉脚本，AI 仅读结果；file name stems may differ
+        by language convention)."""
         fm = _read_frontmatter(GATE_MD.read_text(encoding="utf-8"))
-        # at least the python entry must reference scan_spec_annotations.py
-        assert "scan_spec_annotations.py" in fm, (
-            "scripts.py: must reference scripts/python/scan_spec_annotations.py"
+        # at least the python entry must reference run_gate.py
+        assert "run_gate.py" in fm, (
+            "scripts.py: must reference scripts/python/run_gate.py"
         )
 
-    def test_scripts_sh_references_bash_scanner(self):
+    def test_scripts_sh_references_run_gate_sh(self):
         fm = _read_frontmatter(GATE_MD.read_text(encoding="utf-8"))
-        assert "scan-spec-annotations.sh" in fm
+        assert "run-gate.sh" in fm
 
-    def test_scripts_ps_references_powershell_scanner(self):
+    def test_scripts_ps_references_run_gate_ps1(self):
         fm = _read_frontmatter(GATE_MD.read_text(encoding="utf-8"))
-        assert "scan-spec-annotations.ps1" in fm
+        assert "run-gate.ps1" in fm
+
+
+# ── Body: gate-result artifact path (v0.4) ───────────────────────────────────
+
+
+class TestGateArtifactPath:
+    """v0.4: gate-result 产物路径统一到 specs/<feature>/docs/gate-result.md
+    （由 run_gate 脚本直接写入，AI 仅读结果不能补写）。"""
+
+    def test_body_gate_result_path_in_docs(self):
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "docs/gate-result.md" in body, (
+            "gate body 必须声明 specs/<feature>/docs/gate-result.md 产物路径"
+        )
+
+    def test_body_gate_result_docs_dir_under_specs(self):
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "specs/<feature>/docs/" in body, (
+            "gate body 必须声明 specs/<feature>/docs/ 目录产物路径"
+        )
 
 
 # ── Body: four gate checks ────────────────────────────────────────────────────

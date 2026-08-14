@@ -72,6 +72,8 @@ if awk '
 fi
 
 # ── 4. 提取错误码（Error Code Definitions 章节内，保持出现顺序，去重） ─
+# 只提取错误码表格第一数据列，避免混入噪音（HTTP Status / Related Rule /
+# HTML 注释中的 OPTIONAL/API）。非表格行（列表格式）取行内第一个全大写标识符。
 ERROR_DATA=$(awk '
     /^#/ {
         title = tolower($0)
@@ -80,10 +82,42 @@ ERROR_DATA=$(awk '
         next
     }
     in_section {
-        while (match($0, /[A-Z][A-Z0-9_]{1,}/)) {
+        if (index($0, "<!--") > 0) { next }
+        if ($0 ~ /^[[:space:]]*\|/) {
+            n = split($0, cells, "[|]")
+            # 跳过表头行：任一单元格含 "error code"（忽略大小写，与 py 一致）
+            is_header = 0
+            for (i = 1; i <= n; i++) {
+                c = cells[i]
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", c)
+                if (index(tolower(c), "error code") > 0) { is_header = 1; break }
+            }
+            if (is_header) { next }
+            # 跳过分隔行：所有非空单元格均为 - 或 :
+            is_sep = 1; has_cell = 0
+            for (i = 1; i <= n; i++) {
+                c = cells[i]
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", c)
+                if (c != "") {
+                    has_cell = 1
+                    if (c !~ /^[-:]+$/) { is_sep = 0; break }
+                }
+            }
+            if (has_cell && is_sep) { next }
+            # 第一个数据列：|...|.split("|") 首元素为空 -> cells[2]
+            if (n >= 2) {
+                first = cells[2]
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", first)
+                if (first ~ /^[A-Z][A-Z0-9_]+$/ && !(first in seen)) {
+                    seen[first] = 1; print first
+                }
+            }
+            next
+        }
+        # 非表格行（列表格式）：取行内第一个全大写标识符
+        if (match($0, /[A-Z][A-Z0-9_]{1,}/)) {
             s = substr($0, RSTART, RLENGTH)
             if (!(s in seen)) { seen[s] = 1; print s }
-            $0 = substr($0, RSTART + RLENGTH)
         }
     }
 ' "$SPEC")

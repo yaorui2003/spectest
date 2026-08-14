@@ -29,7 +29,7 @@ description: "Speckit Testing 测试报告：校验门禁已执行，汇总测�
 ### 步骤 1：校验门禁已执行
 
 读取 `GateResult` 产物路径（默认
-`.specify/extensions/testing/gate-result.md`）：
+`specs/<feature>/docs/gate-result.md`）：
 
 - 若产物不存在 -> **拒绝生成报告**，输出提示：
 
@@ -85,7 +85,7 @@ spec.md 全部 business_rules 规则（无 @Spec 的规则对应位置标注
 ### 步骤 4：引用 ImpactReport 产物（不重生成）
 
 读取 `ImpactReport` 产物路径（默认
-`.specify/extensions/testing/impact-report.md`），在报告中以引用形式
+`specs/<feature>/docs/impact-report.md`），在报告中以引用形式
 （链接/路径）呈现其 `risk_level` 与 `affected_rules` 摘要，**不重复
 执行影响分析**。报告中明确标注：
 
@@ -93,7 +93,7 @@ spec.md 全部 business_rules 规则（无 @Spec 的规则对应位置标注
 ## 影响分析（引用）
 
 本节引用 ImpactReport 产物，不重复生成：
-- 产物路径: .specify/extensions/testing/impact-report.md
+- 产物路径: specs/<feature>/docs/impact-report.md
 - 风险等级: high
 - 受影响规则数: N
 （详见产物原文）
@@ -126,13 +126,13 @@ gate_run_at: 2026-08-10T...
 | R7 | AccountService.transfer:46 | R7-自转账应抛出SELF_TRANSFER_NOT_ALLOWED | CT-03 |
 
 ## 影响分析（引用）
-- 产物路径: .specify/extensions/testing/impact-report.md
+- 产物路径: specs/<feature>/docs/impact-report.md
 - 风险等级: high
 - 受影响规则数: 5
 （详见产物原文，本报告不重复生成）
 
 ## 产物路径
-report_path: .specify/extensions/testing/test-report.md
+report_path: specs/<feature>/docs/test-report.md
 ```
 
 ## 契约不变量

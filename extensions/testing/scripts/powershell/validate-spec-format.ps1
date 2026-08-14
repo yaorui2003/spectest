@@ -79,8 +79,42 @@ foreach ($line in $specLines) {
         continue
     }
     if (-not $inErr) { continue }
-    $codeMatches = [regex]::Matches($line, '[A-Z][A-Z0-9_]{1,}')
-    foreach ($m in $codeMatches) {
+    # 跳过 HTML 注释行（如 <!-- OPTIONAL API errors -->）
+    if ($line.Contains('<!--')) { continue }
+    $stripped = $line.Trim()
+    if ($stripped.StartsWith('|')) {
+        # 按 | 拆分为单元格（|...|.Split('|') 首元素为空）
+        $cells = @($stripped.Split('|') | ForEach-Object { $_.Trim() })
+        # 跳过表头行：任一单元格含 "error code"（忽略大小写）
+        $isHeader = $false
+        foreach ($c in $cells) {
+            if ($c.ToLower().Contains('error code')) { $isHeader = $true; break }
+        }
+        if ($isHeader) { continue }
+        # 跳过分隔行：所有非空单元格均为 - 或 :
+        $nonEmpty = @($cells | Where-Object { $_ -ne '' })
+        if ($nonEmpty.Count -gt 0) {
+            $isSep = $true
+            foreach ($c in $nonEmpty) {
+                if ($c -notmatch '^[-:]+$') { $isSep = $false; break }
+            }
+            if ($isSep) { continue }
+        }
+        # 第一个数据列：只提取错误码列，避免混入 HTTP Status / Related Rule
+        if ($cells.Count -ge 2) {
+            $first = $cells[1]
+            if ($first -match '^[A-Z][A-Z0-9_]+$') {
+                if (-not $seenCodes.ContainsKey($first)) {
+                    $seenCodes[$first] = $true
+                    $codes.Add($first)
+                }
+            }
+        }
+        continue
+    }
+    # 非表格行（列表格式）：取行内第一个全大写标识符
+    $m = [regex]::Match($line, '[A-Z][A-Z0-9_]{1,}')
+    if ($m.Success) {
         $code = $m.Value
         if (-not $seenCodes.ContainsKey($code)) {
             $seenCodes[$code] = $true

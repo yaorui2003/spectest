@@ -62,12 +62,25 @@ def _extract_spec_rules(text: str) -> tuple[bool, list[str]]:
 
 
 def _extract_error_codes(text: str) -> tuple[bool, list[str]]:
-    """返回 (Error Code Definitions 章节是否存在, 按出现顺序去重的错误码列表)。"""
+    """返回 (Error Code Definitions 章节是否存在, 按出现顺序去重的错误码列表)。
+
+    只提取错误码表格的第一数据列（错误码列），避免混入噪音：
+    - 跳过 HTML 注释行（``<!-- ... -->``，如 OPTIONAL/API 说明）；
+    - 表格行只取第一个数据列（``|...|.split('|')`` 首元素为空 -> cells[1]），
+      并跳过表头行（含 "error code"）与分隔行（全 -/:）；
+    - 非表格行（如列表格式 ``- INVALID_AMOUNT: ...``）取行内第一个全大写标识符。
+    """
     lines = text.splitlines()
     section_found = False
     in_section = False
     codes: list[str] = []
     seen: set[str] = set()
+
+    def add(code: str) -> None:
+        if code not in seen:
+            codes.append(code)
+            seen.add(code)
+
     for line in lines:
         stripped = line.strip()
         if stripped.startswith("#"):
@@ -80,10 +93,25 @@ def _extract_error_codes(text: str) -> tuple[bool, list[str]]:
             continue
         if not in_section:
             continue
-        for code in ERROR_CODE_RE.findall(line):
-            if code not in seen:
-                codes.append(code)
-                seen.add(code)
+        if "<!--" in line:
+            continue  # 跳过 HTML 注释行
+        if stripped.startswith("|"):
+            cells = [c.strip() for c in line.split("|")]
+            # 跳过表头行：任一单元格含 "error code"（忽略大小写）
+            if any("error code" in c.lower() for c in cells):
+                continue
+            # 跳过分隔行：所有非空单元格均为 - 或 :
+            non_empty = [c for c in cells if c]
+            if non_empty and all(re.fullmatch(r"[-:]+", c) for c in non_empty):
+                continue
+            # 第一个数据列：|...|.split('|') 首元素为空 -> cells[1]
+            if len(cells) >= 2 and re.fullmatch(r"[A-Z][A-Z0-9_]+", cells[1]):
+                add(cells[1])
+            continue
+        # 非表格行（列表格式）：取行内第一个全大写标识符
+        m = ERROR_CODE_RE.search(line)
+        if m:
+            add(m.group(0))
     return section_found, codes
 
 

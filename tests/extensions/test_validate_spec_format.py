@@ -130,6 +130,40 @@ def test_with_error_code_definitions(tmp_path: Path):
     assert all("Error Code Definitions" not in w for w in data["warnings"])
 
 
+def test_error_codes_no_noise(tmp_path: Path):
+    """错误码提取不混入噪音（Bug #1）。
+
+    ECD 段含 (a) HTML 注释行 <!-- OPTIONAL API errors -->、
+    (b) Related Rule 列（R1..R7 值）、(c) HTTP Status 列、
+    (d) 描述含全大写单词（HTTP/API）-> error_codes_found 恰好等于
+    ["INVALID_AMOUNT", "ACCOUNT_NOT_FOUND"]，valid 仍 true。
+    """
+    spec = _write_spec(tmp_path, """\
+# Feature
+
+## Business Rules
+
+- R1: 金额校验
+- R2: 余额校验
+- R3: 冻结校验
+
+### Error Code Definitions
+
+<!-- OPTIONAL API errors -->
+
+| Error Code | HTTP Status | Description | Related Rule |
+|------------|------------|-------------|--------------|
+| INVALID_AMOUNT | 400 | 金额非法 HTTP | R1, R2, R3 |
+| ACCOUNT_NOT_FOUND | 404 | 账号不存在 API | R4, R5, R6, R7 |
+""")
+    data = _run_py(spec)
+    assert data["valid"] is True
+    assert data["error_codes_found"] == ["INVALID_AMOUNT", "ACCOUNT_NOT_FOUND"]
+    # 无噪音：不收集 HTTP / OPTIONAL / API / R1..R7
+    assert all(c not in data["error_codes_found"] for c in ("HTTP", "OPTIONAL", "API"))
+    assert all(not c.startswith("R") for c in data["error_codes_found"])
+
+
 def test_without_error_code_definitions(tmp_path: Path):
     """无 Error Code Definitions 段 -> warnings 非空，valid 仍 true。"""
     spec = _write_spec(tmp_path, """\

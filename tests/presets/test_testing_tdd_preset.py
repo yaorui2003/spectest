@@ -21,7 +21,7 @@ def test_preset_manifest_valid():
         m = yaml.safe_load(f)
     assert m["schema_version"] == "1.0"
     assert m["preset"]["id"] == "testing-tdd"
-    assert m["preset"]["version"] == "1.1.0"
+    assert m["preset"]["version"] == "1.1.2"
     assert m["requires"]["speckit_version"] == ">=0.14.4"
 
 
@@ -45,10 +45,11 @@ def test_constitution_template_seeds_principle_i():
     assert "I. Spec Traceability" in content
     assert "@Spec" in content
     assert "NON-NEGOTIABLE" in content
-    # Principle II 中文文档要求（v0.3 新增）
-    assert "II. 中文文档要求" in content or "中文文档" in content
-    # 仍保留可选占位符供项目填充（Principle III 起）
-    assert "[PRINCIPLE_3_NAME]" in content
+    # Principle II 中文文档与代码注释（v0.4 扩展）
+    assert "II. 中文文档与代码注释" in content
+    # v0.4.x: Principle III（测试技术栈）预置，项目填充占位符顺移到 IV 起
+    assert "III. 测试技术栈" in content
+    assert "[PRINCIPLE_4_NAME]" in content
 
 
 # ---------- tasks-template（wrap，强制 TDD）----------

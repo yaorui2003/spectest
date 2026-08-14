@@ -1,14 +1,14 @@
 # 测试计划: {{capability}}
 
 > 本模板由 speckit.testing 扩展提供（templates/test-plan-template.md）。
-> 由 `speckit.testing.plan` 命令生成，产出物路径 `specs/{{feature}}/test-plan.md`。
+> 由 `speckit.testing.plan` 命令生成，产出物路径 `specs/{{feature}}/docs/test-plan.md`。
 > 占位符统一使用 {{var}} 双花括号格式，由 AI 在 plan 阶段填充。
 
 **能力**: {{capability}}
 **模块**: {{module}}
 **风险等级**: {{risk_level}}
 **生成日期**: {{date}}
-**引用影响分析**: `specs/{{feature}}/impact-report.json`
+**引用影响分析**: `specs/{{feature}}/docs/impact-report.md`
 
 ---
 

@@ -134,7 +134,7 @@ contracts/ / data-model.md / research.md），生成契约测试与单测用例�
 | 阶段 | 用例 | 依赖 |
 
 ## 产物路径
-test_plan_path: .specify/extensions/testing/test-plan.md
+test_plan_path: specs/<feature>/docs/test-plan.md
 ```
 
 ## 契约不变量
@@ -144,7 +144,7 @@ test_plan_path: .specify/extensions/testing/test-plan.md
 - 单测 `@DisplayName` 格式 `R<n>-<描述>`，与 `@Spec(rule="Rn")` 双向对齐
 - 阈值：`ImpactReport` 存在则风险档，否则 default 档
 - `TestPlan` 产物路径必须可被后续 `speckit.tasks` 读取（默认写入
-  `.specify/extensions/testing/test-plan.md`）
+  `specs/<feature>/docs/test-plan.md`）
 
 ## 模板引用
 

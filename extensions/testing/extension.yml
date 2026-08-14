@@ -3,7 +3,7 @@ schema_version: "1.0"
 extension:
   id: testing
   name: Speckit Testing
-  version: 1.1.0
+  version: 1.1.2
   description: "Spec 驱动测试先行验证，含 @Spec 注解追溯与自动门禁（技术栈必需前置 + 脚本化 + 硬校验）"
   author: speckit-core
   repository: https://github.com/github/spec-kit
@@ -66,6 +66,10 @@ provides:
     - name: scan-test-stack
       file: scripts/python/scan_test_stack.py
       description: "测试技术栈硬校验脚本（禁 PowerMock / @SpringBootTest）"
+      runtimes: [python, bash, powershell]
+    - name: run-gate
+      file: scripts/python/run_gate.py
+      description: "门禁编排脚本（全逻辑下沉，AI 仅读结果）"
       runtimes: [python, bash, powershell]
 
   config:

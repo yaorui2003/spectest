@@ -13,10 +13,11 @@ description: "Task list template for feature implementation (testing-tdd preset:
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
-## Format: `[ID] [P?] [Story] Description`
+## Format: `[ID] [P?] [Story] [Rule] Description`
 
 - **[P]**: Can run in parallel (different files, no dependencies)
 - **[Story]**: Which user story this task belongs to (e.g. US1, US2, US3)
+- **[Rule]**: 该任务追溯的规则编号（如 R1），支撑 gate 的 @Spec/@DisplayName 双向对齐
 - Include exact file paths in descriptions
 
 ## Path Conventions
@@ -46,6 +47,12 @@ description: "Task list template for feature implementation (testing-tdd preset:
   Skeletons (Phase 2) MUST be created first so tests compile (Red = assertion
   failure, not compile failure).
   DO NOT keep these sample tasks in the generated tasks.md file.
+
+  双标签说明：每个任务带 [USx] 与 [Rn] 两个标签——
+  - [USx] 是 spec-kit 的 user-story 组织索引键（核心 tasks 工作流按 story
+    组织任务，去掉会破坏核心工作流）
+  - [Rn] 是 testing 扩展的规则追溯维度，标注该任务实现的 business_rules
+    规则编号（如 R1），支撑 gate 的 @Spec/@DisplayName 双向对齐校验
   ============================================================================
   -->
 
@@ -93,19 +100,19 @@ Examples of foundational tasks (adjust based on your project):
 
 > **MANDATORY: Write these tests FIRST, ensure they FAIL (Red) before ANY implementation task (Green).** Do not skip this subsection.
 
-- [ ] T015 [P] [US1] Unit test for [user journey] in src/test/java/{{package}}/unit/[Service]Test.java (JUnit5 + Mockito, @DisplayName("R<n>-<描述>"))
-- [ ] T016 [P] [US1] Contract test for [endpoint] in src/test/java/{{package}}/contract/[Contract]ContractTest.java (WireMock, @DisplayName("R<n>-<描述>"))
+- [ ] T015 [P] [US1] [R1] Unit test for [user journey] in src/test/java/{{package}}/unit/[Service]Test.java (JUnit5 + Mockito, @DisplayName("R<n>-<描述>"))
+- [ ] T016 [P] [US1] [R1] Contract test for [endpoint] in src/test/java/{{package}}/contract/[Contract]ContractTest.java (WireMock, @DisplayName("R<n>-<描述>"))
 
 ### Implementation for User Story 1
 
 > These tasks MUST come AFTER the test tasks above (Red-Green order).
 
-- [ ] T017 [P] [US1] Create [Entity1] model in src/main/java/{{package}}/model/[Entity1].java
-- [ ] T018 [P] [US1] Create [Entity2] model in src/main/java/{{package}}/model/[Entity2].java
-- [ ] T019 [US1] Implement [Service] in src/main/java/{{package}}/service/[Service].java (depends on T017, T018)
-- [ ] T020 [US1] Implement [endpoint/feature] in src/main/java/{{package}}/[location]/[File].java
-- [ ] T021 [US1] Add validation and error handling
-- [ ] T022 [US1] Add logging for user story 1 operations
+- [ ] T017 [P] [US1] [R1] Create [Entity1] model in src/main/java/{{package}}/model/[Entity1].java
+- [ ] T018 [P] [US1] [R1] Create [Entity2] model in src/main/java/{{package}}/model/[Entity2].java
+- [ ] T019 [US1] [R1] Implement [Service] in src/main/java/{{package}}/service/[Service].java (depends on T017, T018)
+- [ ] T020 [US1] [R1] Implement [endpoint/feature] in src/main/java/{{package}}/[location]/[File].java
+- [ ] T021 [US1] [R1] Add validation and error handling
+- [ ] T022 [US1] [R1] Add logging for user story 1 operations
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
 
@@ -121,17 +128,17 @@ Examples of foundational tasks (adjust based on your project):
 
 > **MANDATORY: Write these tests FIRST, ensure they FAIL (Red) before implementation.**
 
-- [ ] T023 [P] [US2] Unit test for [user journey] in src/test/java/{{package}}/unit/[Service]Test.java (JUnit5 + Mockito, @DisplayName("R<n>-<描述>"))
-- [ ] T024 [P] [US2] Contract test for [endpoint] in src/test/java/{{package}}/contract/[Contract]ContractTest.java (WireMock, @DisplayName("R<n>-<描述>"))
+- [ ] T023 [P] [US2] [R2] Unit test for [user journey] in src/test/java/{{package}}/unit/[Service]Test.java (JUnit5 + Mockito, @DisplayName("R<n>-<描述>"))
+- [ ] T024 [P] [US2] [R2] Contract test for [endpoint] in src/test/java/{{package}}/contract/[Contract]ContractTest.java (WireMock, @DisplayName("R<n>-<描述>"))
 
 ### Implementation for User Story 2
 
 > These tasks MUST come AFTER the test tasks above (Red-Green order).
 
-- [ ] T025 [P] [US2] Create [Entity] model in src/main/java/{{package}}/model/[Entity].java
-- [ ] T026 [US2] Implement [Service] in src/main/java/{{package}}/service/[Service].java
-- [ ] T027 [US2] Implement [endpoint/feature] in src/main/java/{{package}}/[location]/[File].java
-- [ ] T028 [US2] Integrate with User Story 1 components (if needed)
+- [ ] T025 [P] [US2] [R2] Create [Entity] model in src/main/java/{{package}}/model/[Entity].java
+- [ ] T026 [US2] [R2] Implement [Service] in src/main/java/{{package}}/service/[Service].java
+- [ ] T027 [US2] [R2] Implement [endpoint/feature] in src/main/java/{{package}}/[location]/[File].java
+- [ ] T028 [US2] [R2] Integrate with User Story 1 components (if needed)
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently
 
@@ -147,16 +154,16 @@ Examples of foundational tasks (adjust based on your project):
 
 > **MANDATORY: Write these tests FIRST, ensure they FAIL (Red) before implementation.**
 
-- [ ] T029 [P] [US3] Unit test for [user journey] in src/test/java/{{package}}/unit/[Service]Test.java (JUnit5 + Mockito, @DisplayName("R<n>-<描述>"))
-- [ ] T030 [P] [US3] Contract test for [endpoint] in src/test/java/{{package}}/contract/[Contract]ContractTest.java (WireMock, @DisplayName("R<n>-<描述>"))
+- [ ] T029 [P] [US3] [R3] Unit test for [user journey] in src/test/java/{{package}}/unit/[Service]Test.java (JUnit5 + Mockito, @DisplayName("R<n>-<描述>"))
+- [ ] T030 [P] [US3] [R3] Contract test for [endpoint] in src/test/java/{{package}}/contract/[Contract]ContractTest.java (WireMock, @DisplayName("R<n>-<描述>"))
 
 ### Implementation for User Story 3
 
 > These tasks MUST come AFTER the test tasks above (Red-Green order).
 
-- [ ] T031 [P] [US3] Create [Entity] model in src/main/java/{{package}}/model/[Entity].java
-- [ ] T032 [US3] Implement [Service] in src/main/java/{{package}}/service/[Service].java
-- [ ] T033 [US3] Implement [endpoint/feature] in src/main/java/{{package}}/[location]/[File].java
+- [ ] T031 [P] [US3] [R3] Create [Entity] model in src/main/java/{{package}}/model/[Entity].java
+- [ ] T032 [US3] [R3] Implement [Service] in src/main/java/{{package}}/service/[Service].java
+- [ ] T033 [US3] [R3] Implement [endpoint/feature] in src/main/java/{{package}}/[location]/[File].java
 
 **Checkpoint**: All user stories should now be independently functional
 

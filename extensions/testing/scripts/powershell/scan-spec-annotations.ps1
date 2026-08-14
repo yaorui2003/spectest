@@ -79,8 +79,9 @@ foreach ($javaFile in $javaFiles) {
     $lines = [System.IO.File]::ReadAllLines($javaFile.FullName, $utf8)
     $package = ""
     $className = ""
-    $pending = $false
-    $pRule = ""; $pCap = ""; $pDesc = ""; $pLine = 0
+    # pending 列表：每条 @Spec 追加 @($rule, $cap, $desc, $lineNo)，
+    # 支持 @Repeatable 多注解堆叠（Bug #6：单标量会被后一条覆盖）。
+    $pending = [System.Collections.Generic.List[object]]::new()
     for ($i = 0; $i -lt $lines.Count; $i++) {
         $line = $lines[$i]
         $lineNo = $i + 1
@@ -92,33 +93,73 @@ foreach ($javaFile in $javaFiles) {
         if ($className -eq "" -and $line -match '\b(?:class|interface|enum|record)\s+(\w+)') {
             $className = $Matches[1]
         }
-        # @Spec 注解
+        # @Spec 注解（支持 @Repeatable 多注解堆叠：逐条追加到 pending 列表）
         if ($line -match '@Spec\s*\(\s*capability\s*=\s*"([^"]+)"\s*,\s*rule\s*=\s*"(R\d+)"(?:\s*,\s*description\s*=\s*"([^"]*)")?\s*\)') {
-            $pCap = $Matches[1]
-            $pRule = $Matches[2]
-            $pDesc = if ($Matches[3]) { $Matches[3] } else { "" }
-            $pLine = $lineNo
-            $pending = $true
+            $rule = $Matches[2]
+            $cap = $Matches[1]
+            $desc = $(if ($Matches[3]) { $Matches[3] } else { "" })
+            # 同一行方法签名（如 @Spec(...) public void foo()）：
+            # 立即刷出（含先前 pending），不入 pending，与 Python 逐条解析一致
+            if ($line -match '(public|protected|private)' -and $line -match '\(') {
+                $s = $line
+                if ($s -match '(public|protected|private)') {
+                    $s = $s.Substring($s.IndexOf($Matches[0]))
+                }
+                $s = $s -replace '\(.*', ''
+                if ($s -match '([A-Za-z_][A-Za-z0-9_]*)\s*$') {
+                    $method = $Matches[1]
+                    if ($s -match '\s$') { $method = $method.Trim() }
+                    foreach ($p in $pending) {
+                        if ($package -ne "") {
+                            $loc = "$package.$className.$method`:$($p[3])"
+                        } else {
+                            $loc = "$className.$method`:$($p[3])"
+                        }
+                        $annotations.Add("$($p[0])`t$($p[1])`t$($p[2])`t$loc")
+                    }
+                    $pending.Clear()
+                    if ($package -ne "") {
+                        $loc = "$package.$className.$method`:$lineNo"
+                    } else {
+                        $loc = "$className.$method`:$lineNo"
+                    }
+                    $annotations.Add("$rule`t$cap`t$desc`t$loc")
+                    continue
+                }
+            }
+            $pending.Add(@($rule, $cap, $desc, $lineNo))
             continue
         }
-        # pending 时查找方法签名（跳过其他注解行）
-        if ($pending -and $line -notmatch '^\s*@') {
+        # pending 时查找方法签名（跳过其他注解行），一次性刷出全部 pending
+        if ($pending.Count -gt 0 -and $line -notmatch '^\s*@') {
             if ($line -match '(public|protected|private)' -and $line -match '\(') {
                 $s = $line -replace '\(.*', ''
                 if ($s -match '([A-Za-z_][A-Za-z0-9_]*)\s*$') {
                     $method = $Matches[1]
                     if ($s -match '\s$') { $method = $method.Trim() }
-                    if ($package -ne "") {
-                        $loc = "$package.$className.$method`:$pLine"
-                    } else {
-                        $loc = "$className.$method`:$pLine"
+                    foreach ($p in $pending) {
+                        if ($package -ne "") {
+                            $loc = "$package.$className.$method`:$($p[3])"
+                        } else {
+                            $loc = "$className.$method`:$($p[3])"
+                        }
+                        $annotations.Add("$($p[0])`t$($p[1])`t$($p[2])`t$loc")
                     }
-                    $annotations.Add("$pRule`t$pCap`t$pDesc`t$loc")
-                    $pending = $false
+                    $pending.Clear()
                 }
             }
         }
     }
+    # 文件末尾残留 pending（类级 @Spec 未遇方法签名）：用类名兜底刷出（与 Python 一致）
+    foreach ($p in $pending) {
+        if ($package -ne "") {
+            $loc = "$package.$className.$className`:$($p[3])"
+        } else {
+            $loc = "$className.$className`:$($p[3])"
+        }
+        $annotations.Add("$($p[0])`t$($p[1])`t$($p[2])`t$loc")
+    }
+    $pending.Clear()
 }
 
 # ── 3. JSON 序列化：python3 兜底，与 Python 版字节级等价 ─────────────

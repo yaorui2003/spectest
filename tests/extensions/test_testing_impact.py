@@ -92,3 +92,24 @@ class TestImpactBodySections:
         """Output artifact name is ImpactReport."""
         body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
         assert "ImpactReport" in body
+
+
+# ── Body: artifact path (v0.4) ───────────────────────────────────────────────
+
+
+class TestImpactArtifactPath:
+    """v0.4: impact-report 产物路径统一到 specs/<feature>/docs/impact-report.md
+    （废弃 .specify/extensions/testing/）。"""
+
+    def test_body_impact_report_path_in_docs(self):
+        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
+        assert "specs/<feature>/docs/impact-report.md" in body, (
+            "impact body 必须声明 specs/<feature>/docs/impact-report.md 产物路径"
+        )
+
+    def test_body_no_legacy_specify_path(self):
+        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
+        assert ".specify/extensions/testing/" not in body, (
+            "v0.4: 废弃 .specify/extensions/testing/ 产物路径，应改为 "
+            "specs/<feature>/docs/"
+        )

@@ -4,7 +4,7 @@
 ``specs/001-speckit-testing-ext/contracts/manifest-schema.md``：
 
 - ``schema_version == "1.0"``
-- ``extension.id == "testing"``、``version == "1.1.0"``（v0.3 升版）
+- ``extension.id == "testing"``、``version == "1.1.2"``（v0.4.x 维护升版：#5 禁改脚本 + #6 @Repeatable + #1 error_codes 噪声 + P1 反向 DisplayName 检查 + P4 @Spec parity 补全）
 - ``requires.speckit_version == ">=0.2.0"``
 - ``hooks`` 为顶层字段（不在 ``provides`` 内）
 - v0.3: ``hooks.before_plan`` 已移除；``hooks.after_implement`` 改为列表形式
@@ -45,7 +45,7 @@ def test_schema_version(manifest):
 def test_extension_identity(manifest):
     ext = manifest["extension"]
     assert ext["id"] == "testing"
-    assert ext["version"] == "1.1.0"
+    assert ext["version"] == "1.1.2"
 
 
 def test_requires_speckit_version(manifest):
@@ -104,6 +104,20 @@ def test_provides_templates_count_and_naming(manifest):
         assert TEMPLATE_NAME_RE.match(t["name"]), (
             f"模板名 {t['name']!r} 不匹配 {TEMPLATE_NAME_RE.pattern}"
         )
+
+
+def test_scripts_declares_run_gate(manifest):
+    """v0.4: provides.scripts 新增 run-gate 条目（门禁编排脚本，全逻辑下沉，
+    AI 仅读结果），file 指向 scripts/python/run_gate.py。"""
+    scripts = manifest["provides"]["scripts"]
+    run_gate = [s for s in scripts if s["name"] == "run-gate"]
+    assert len(run_gate) == 1, (
+        f"provides.scripts 必须声明 run-gate 条目，实际 {len(run_gate)} 个"
+    )
+    assert run_gate[0]["file"] == "scripts/python/run_gate.py", (
+        f"run-gate 条目 file 应为 scripts/python/run_gate.py，实际 "
+        f"{run_gate[0]['file']!r}"
+    )
 
 
 # ── T027: manifest 声明的文件实际存在性校验 ──────────────────────────────────

@@ -239,6 +239,63 @@ def test_scan_orphan_annotation(sample_project):
     assert "R7" in data["unimplemented_rules"]
 
 
+# ── 用例 (d): @Repeatable @Spec 堆叠 ────────────────────────────────────
+
+
+def test_scan_repeatable_spec(tmp_path: Path):
+    """同一方法多个 @Spec 堆叠（@Repeatable）-> 各自独立注解行（Bug #6）。
+
+    3 个 @Spec（R1/R2/R3）堆叠在同一个 transfer() 方法上：
+    - 产出 3 条注解，全部指向 transfer()，每条 @Spec 用各自行号
+    - coverage 100%（R1-R3 全实现），无 orphan / unimplemented
+    """
+    spec_path = tmp_path / "spec.md"
+    spec_path.write_text("""\
+# Transfer
+
+## Business Rules
+
+- R1: 转账金额必须大于0
+- R2: 转账账户必须有足够余额
+- R3: 不可向冻结账户转账
+""", encoding="utf-8")
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    java_content = """\
+package com.example;
+
+import com.speckit.testing.Spec;
+
+@org.springframework.stereotype.Service
+public class AccountService {
+
+    @Spec(capability = "transfer", rule = "R1", description = "金额校验")
+    @Spec(capability = "transfer", rule = "R2", description = "余额校验")
+    @Spec(capability = "transfer", rule = "R3", description = "冻结校验")
+    public void transfer() {
+    }
+}
+"""
+    (src_dir / "AccountService.java").write_text(java_content, encoding="utf-8")
+
+    _, data = _run_py(src_dir, spec_path)
+
+    assert data["spec_rules"] == ["R1", "R2", "R3"]
+    # 3 条注解全部指向 transfer()，且各自保留自己的 @Spec 行号
+    assert len(data["annotations"]) == 3
+    assert [a["rule"] for a in data["annotations"]] == ["R1", "R2", "R3"]
+    assert [a["location"] for a in data["annotations"]] == [
+        "com.example.AccountService.transfer:8",
+        "com.example.AccountService.transfer:9",
+        "com.example.AccountService.transfer:10",
+    ]
+    for ann in data["annotations"]:
+        assert ann["capability"] == "transfer"
+    assert data["unimplemented_rules"] == []
+    assert data["orphan_annotations"] == []
+    assert data["coverage_percent"] == 100
+
+
 # ── 三语言等价性 ─────────────────────────────────────────────────────────
 
 

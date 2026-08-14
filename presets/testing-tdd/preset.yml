@@ -3,7 +3,7 @@ schema_version: "1.0"
 preset:
   id: "testing-tdd"
   name: "Speckit Testing TDD Enforcement"
-  version: "1.1.0"
+  version: "1.1.2"
   description: "强制 TDD 任务顺序（骨架先行 -> 单测先行 -> 契约测试 -> 业务代码）+ 预置宪法 Principle I（Spec Traceability 置首）+ spec-template 加 Business Rules 段 + implement 约定参考 + 技术栈。配合 testing 扩展使用。"
   author: "spec-kit-core"
   repository: "https://github.com/github/spec-kit"

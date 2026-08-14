@@ -71,7 +71,38 @@ done < <(find "$SOURCE" -name '*.java' -type f | LC_ALL=C sort)
 ANNOTATIONS=""
 if [[ ${#JAVA_FILES[@]} -gt 0 ]]; then
     ANNOTATIONS=$(awk '
-        FNR == 1 { package = ""; class_name = ""; pending = 0 }
+        # 输出函数（awk 函数内变量需在参数列表尾部声明为局部变量）
+        function flush_method(method,    i, loc) {
+            for (i = 1; i <= pn; i++) {
+                if (package != "") {
+                    loc = package "." class_name "." method ":" p_line[i]
+                } else {
+                    loc = class_name "." method ":" p_line[i]
+                }
+                printf "%s\t%s\t%s\t%s\n", p_rule[i], p_cap[i], p_desc[i], loc
+            }
+            pn = 0
+        }
+        # 类级 @Spec 兜底：pending 始终未遇方法签名时，用类名作为方法名（与 Python 一致）
+        function flush_class_fallback(    i, loc) {
+            for (i = 1; i <= pn; i++) {
+                if (package != "") {
+                    loc = package "." class_name "." class_name ":" p_line[i]
+                } else {
+                    loc = class_name "." class_name ":" p_line[i]
+                }
+                printf "%s\t%s\t%s\t%s\n", p_rule[i], p_cap[i], p_desc[i], loc
+            }
+            pn = 0
+        }
+
+        FNR == 1 {
+            # 新文件开始：先刷出上一文件残留 pending（类级 @Spec），再重置本文件状态
+            if (pn > 0) {
+                flush_class_fallback()
+            }
+            package = ""; class_name = ""; pn = 0
+        }
 
         # 包名
         /^[[:space:]]*package[[:space:]]+/ {
@@ -94,7 +125,7 @@ if [[ ${#JAVA_FILES[@]} -gt 0 ]]; then
             }
         }
 
-        # @Spec 注解
+        # @Spec 注解（支持 @Repeatable 多注解堆叠：逐条追加到 pending 列表）
         /@Spec[[:space:]]*\(/ {
             rule = ""; cap = ""; desc = ""
             if (match($0, /rule[[:space:]]*=[[:space:]]*"R[0-9]+"/)) {
@@ -110,24 +141,48 @@ if [[ ${#JAVA_FILES[@]} -gt 0 ]]; then
                 sub(/^description[[:space:]]*=[[:space:]]*"/, "", s); sub(/"$/, "", s); desc = s
             }
             if (rule != "") {
-                pending = 1; p_rule = rule; p_cap = cap; p_desc = desc; p_line = FNR
+                # 同一行方法签名（如 @Spec(...) public void foo()）：
+                # 立即刷出（含先前 pending），不入 pending，与 Python 逐条解析一致
+                if ($0 ~ /(public|protected|private)/ && $0 ~ /\(/) {
+                    s = $0
+                    if (match(s, /(public|protected|private)/)) {
+                        s = substr(s, RSTART)
+                    }
+                    sub(/\(.*/, "", s)
+                    if (match(s, /[A-Za-z_][A-Za-z0-9_]*[[:space:]]*$/)) {
+                        method = substr(s, RSTART, RLENGTH); sub(/[[:space:]]+$/, "", method)
+                        if (pn > 0) {
+                            flush_method(method)
+                        }
+                        if (package != "") {
+                            loc = package "." class_name "." method ":" FNR
+                        } else {
+                            loc = class_name "." method ":" FNR
+                        }
+                        printf "%s\t%s\t%s\t%s\n", rule, cap, desc, loc
+                        next
+                    }
+                }
+                pn++
+                p_rule[pn] = rule; p_cap[pn] = cap; p_desc[pn] = desc; p_line[pn] = FNR
             }
         }
 
-        # pending 时查找方法签名（跳过其他注解行）
-        pending && $0 !~ /^[[:space:]]*@/ {
+        # pending 时查找方法签名（跳过其他注解行），一次性刷出全部 pending
+        pn > 0 && $0 !~ /^[[:space:]]*@/ {
             if ($0 ~ /(public|protected|private)/ && $0 ~ /\(/) {
                 s = $0; sub(/\(.*/, "", s)
                 if (match(s, /[A-Za-z_][A-Za-z0-9_]*[[:space:]]*$/)) {
                     method = substr(s, RSTART, RLENGTH); sub(/[[:space:]]+$/, "", method)
-                    if (package != "") {
-                        loc = package "." class_name "." method ":" p_line
-                    } else {
-                        loc = class_name "." method ":" p_line
-                    }
-                    printf "%s\t%s\t%s\t%s\n", p_rule, p_cap, p_desc, loc
-                    pending = 0
+                    flush_method(method)
                 }
+            }
+        }
+
+        # 文件末尾残留 pending（类级 @Spec 未遇方法签名）：类名兜底刷出
+        END {
+            if (pn > 0) {
+                flush_class_fallback()
             }
         }
     ' "${JAVA_FILES[@]}")

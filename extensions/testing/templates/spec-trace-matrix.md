@@ -1,13 +1,13 @@
 # Spec 追溯矩阵: {{capability}}
 
 > 本模板由 speckit.testing 扩展提供（templates/spec-trace-matrix.md）。
-> 由 `speckit.testing.report` 命令生成，产出物路径 `specs/{{feature}}/spec-trace-matrix.md`。
+> 由 `speckit.testing.report` 命令生成，产出物路径 `specs/{{feature}}/docs/test-report.md`。
 > 每行一条 SpecRule（R1..Rn），引用而非重生成 ImpactReport。
 
 **能力**: {{capability}}
 **生成日期**: {{date}}
-**引用影响分析**: `specs/{{feature}}/impact-report.json`
-**引用门禁结果**: `specs/{{feature}}/gate-result.json`
+**引用影响分析**: `specs/{{feature}}/docs/impact-report.md`
+**引用门禁结果**: `specs/{{feature}}/docs/gate-result.md`
 
 ---
 
