@@ -146,17 +146,20 @@ AI 会伪造（声称 96% 实际 62.9%）。v0.4 把 gate 的**全部确定性�
 
 三种方式，任选其一：
 
-**方式 A（Release 直装，推荐给终端用户，装在任何标准 spec-kit 上）**：
+**方式 A（直装，推荐给终端用户，装在任何标准 spec-kit 上）**：
 
 ```bash
 # 装扩展
 specify extension add testing \
-  --from https://github.com/yaorui2003/spectest/releases/download/v1.1.2/testing-1.1.2.zip
+  --from https://raw.githubusercontent.com/yaorui2003/spectest/main/releases/testing-1.1.2.zip
 # 装配套预设（预设会 replace 核心模板：宪法 / spec-template / tasks / implement）
 specify preset add testing-tdd \
-  --from https://github.com/yaorui2003/spectest/releases/download/v1.1.2/testing-tdd-1.1.2.zip
+  --from https://raw.githubusercontent.com/yaorui2003/spectest/main/releases/testing-tdd-1.1.2.zip
 ```
 
+> 大陆网络下 `raw.githubusercontent.com` 的 DNS 可能解析到被墙 IP，python 无法下载。
+> 解决：在 `/etc/hosts` 固定 `185.199.111.133 raw.githubusercontent.com`（或换用
+> GitHub Release 版 URL：`https://github.com/yaorui2003/spectest/releases/download/v1.1.2/testing-1.1.2.zip`）。
 > `extension add --from` 对非 catalog 来源会弹"Untrusted Source"确认，属正常安全提示，
 > 按 `y` 继续即可。
 
