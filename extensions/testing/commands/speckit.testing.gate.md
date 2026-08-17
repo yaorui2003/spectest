@@ -31,13 +31,13 @@ scripts:
 
 ## 输入
 
-- 用户项目业务代码（`.java` 源文件，含 `@Spec` 注解）
-- 测试代码（单测 + 契约测试，单测带 `@DisplayName` 规则标注）
-- `spec.md`（`business_rules` 规则编号清单）
-- `ImpactReport` 产物（`specs/<feature>/docs/impact-report.md`，取
-  `risk_level` 套阈值；after_implement 时由 `speckit.testing.impact` 在
-  本命令前产出）
-- `testing-config.yml`（阈值与风险覆盖配置）
+| 参考生成物 | 必需性 | 用途 |
+|---|---|---|
+| 用户项目业务代码（`.java` 源文件，含 `@Spec` 注解） | REQUIRED | 扫描 @Spec 注解 + 规则覆盖校验 |
+| 测试代码（单测 + 契约测试，单测带 `@DisplayName` 规则标注） | REQUIRED | `mvn clean test` 执行 + @DisplayName 双向对齐 |
+| `spec.md`（`business_rules` 规则编号清单） | REQUIRED | 规则编号比对（unimplemented_rules / orphan_annotations） |
+| `ImpactReport` 产物（`specs/<feature>/docs/impact-report.md`） | REQUIRED（前置检查，缺失即 FAIL） | 取 `risk_level` 套阈值；after_implement 时由 `speckit.testing.impact` 在本命令前产出 |
+| `testing-config.yml`（阈值与风险覆盖配置） | REQUIRED（未配置时用默认模板值） | 阈值与风险覆盖配置 |
 
 ## 技术栈前置要求（REQUIRED）
 

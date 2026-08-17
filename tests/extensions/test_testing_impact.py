@@ -137,6 +137,22 @@ class TestImpactE2ECaseSet:
         body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
         assert "不进门槛" in body or "不进门禁" in body
 
+    def test_body_case_set_uses_given_when_then(self):
+        """v0.6: 案例集按 Given-When-Then 编写（e2e AI 易解析）。"""
+        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
+        assert "**Given**" in body
+        assert "**When**" in body
+        assert "**Then**" in body
+
+    def test_body_case_set_references_e2e_template(self):
+        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
+        assert "e2e-case-template" in body
+
+    def test_body_case_set_no_ascii_table(self):
+        """不再用 ASCII 表格（冗余），改结构化 markdown 块。"""
+        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
+        assert "┌" not in body, "v0.6: 功能测试案例集应弃用 ASCII 框线表格"
+
 
 # ── Body: artifact path (v0.4) ───────────────────────────────────────────────
 

@@ -18,11 +18,13 @@ description: "Speckit Testing 测试报告：校验门禁已执行，汇总测�
 
 ## 输入
 
-- `GateResult` 产物（含 PASS/FAIL 判定、单测明细、契约测试明细、Spec
-  规则覆盖矩阵）
-- `ImpactReport` 产物（引用，不重复生成）
-- `spec.md`（`business_rules` 规则编号清单）
-- 扫描脚本产出的覆盖矩阵（`@Spec` 注解分布 JSON）
+| 参考生成物 | 必需性 | 用途 |
+|---|---|---|
+| `GateResult` 产物（`specs/<feature>/docs/gate-result.md`） | REQUIRED（缺失或 FAIL 时拒绝生成报告） | 校验门禁已 PASS + 汇总测试结果（覆盖率/通过率） |
+| `ImpactReport` 产物（`specs/<feature>/docs/impact-report.md`） | REQUIRED（引用，不重复生成） | 呈现 risk_level + affected_rules 摘要 |
+| `spec.md`（`business_rules` 规则编号清单） | REQUIRED | 追溯矩阵规则清单（R1..Rn） |
+| 扫描脚本产出的覆盖矩阵（`@Spec` 注解分布 JSON） | REQUIRED | annotated_rules 代码位置（追溯矩阵来源） |
+| `TestPlan` 产物（`specs/<feature>/docs/test-plan.md`） | REQUIRED | CT-xx 按规则编号反查（追溯矩阵契约测试列） |
 
 ## 处理逻辑
 

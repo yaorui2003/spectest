@@ -8,7 +8,7 @@
 ## 概述
 
 本扩展为 spec-kit 增加"Spec 驱动测试先行"能力，通过 4 个命令 + 2 个强制钩子
-+ 5 个代码/文档模板 + 5 组三语言脚本（含 `run_gate` 门禁编排）+ `@Spec` 注解，
++ 6 个代码/文档模板 + 5 组三语言脚本（含 `run_gate` 门禁编排）+ `@Spec` 注解，
 实现 **Spec-Code-Test 三角一致性**自动校验，并在此基础上提供**前端 e2e 测试
 规划**（e2e 不做 TDD、不进门禁，仅生成规划产物供 e2e 测试 AI 消费）。
 
@@ -59,7 +59,7 @@ spec-kit 核心（`/speckit.*` 原生命令）只提供「需求 -> 方案 -> �
 
 | 命令 | 作用 | 实现方式 |
 |---|---|---|
-| `/speckit.testing.impact` | 变更影响分析：解析 git diff 中 spec.md 变更 + 扫描代码依赖 + 按规则语义风险分级（high/medium/low）+ 产出受影响规则清单与测试策略 + **功能测试案例集**（TC-xx，供前端 e2e 测试 AI 使用） | 命令 `.md` 描述 AI 执行步骤（解析 diff / 扫描结构 / 语义分级 / 产出 ImpactReport / 生成 TC 案例集）；`after_implement` 钩子 `optional:false` 强制自动 |
+| `/speckit.testing.impact` | 变更影响分析：解析 git diff 中 spec.md 变更 + 扫描代码依赖 + 按规则语义风险分级（high/medium/low）+ 产出受影响规则清单与测试策略 + **功能测试案例集**（TC-xx，Given-When-Then，供前端 e2e 测试 AI 使用） | 命令 `.md` 描述 AI 执行步骤（解析 diff / 扫描结构 / 语义分级 / 产出 ImpactReport / 生成 TC 案例集）；`after_implement` 钩子 `optional:false` 强制自动 |
 | `/speckit.testing.plan` | 测试计划：遍历 contracts/ + business_rules 生成 CT/UT 用例清单 + **前端测试项（TC，e2e 规划简版）** + 单测质量要求 + 按风险套阈值 + 单测先行排期 | 命令 `.md` 描述生成逻辑，引用 `test-plan-template` 组织文档结构 |
 | `/speckit.testing.gate` | 门禁：AI 调 `run_gate` 脚本执行全量校验，仅读 stdout 判定 JSON 输出阻断/通过指令 | frontmatter `scripts:` 段声明 run_gate 三语言入口；AI 不执行 mvn、不改判、不补写 |
 | `/speckit.testing.report` | 测试报告：校验门禁已 PASS + 汇总结果 + 生成 Spec 追溯矩阵 + 引用（不重生成）ImpactReport | 命令 `.md` 描述汇总与矩阵生成，引用 `spec-trace-matrix` 模板 |
@@ -75,7 +75,7 @@ spec-kit 核心（`/speckit.*` 原生命令）只提供「需求 -> 方案 -> �
 `impact`（先产出风险）-> `gate`（后消费风险套阈值）。**impact 在前、gate 在后**
 的顺序是钩子链不断裂的关键——gate 前置检查 impact-report.md 存在，缺失即 FAIL。
 
-#### 1.2.3 5 个模板（provides.templates）
+#### 1.2.3 6 个模板（provides.templates）
 
 | 模板 | 作用 | 实现方式 |
 |---|---|---|
@@ -83,6 +83,7 @@ spec-kit 核心（`/speckit.*` 原生命令）只提供「需求 -> 方案 -> �
 | `java-unit-test-template` | JUnit5 单测骨架，`@DisplayName("R<n>-...")` 规则标注 + given/when/then 三段式 | 同上 |
 | `contract-test-template` | 契约测试骨架：WireMock stub + HTTP 客户端调用 + 断言响应码/体，每接口 1 正向 + 每错误码 1 反向，禁 `assertTrue(true)` | 同上 |
 | `test-plan-template` | 测试计划文档结构（验收阈值 + CT/UT 用例表 + **前端测试项 TC 表** + 排期表） | `.md` 文件，testing.plan 命令引用组织产物 |
+| `e2e-case-template` | **功能测试案例集模板**（Given-When-Then 结构化块：类型/关联规则 + Given/When/Then 三段，供前端 e2e 测试 AI 使用） | `.md` 文件，testing.impact 命令引用组织产物 |
 | `spec-trace-matrix` | Spec 追溯矩阵结构（门禁状态 + 结果摘要 + R->@Spec->单测->CT 矩阵 + 影响引用） | `.md` 文件，testing.report 命令引用组织产物 |
 
 #### 1.2.4 5 组三语言脚本（provides.scripts，sh/ps/py 字节级等价）
@@ -121,10 +122,10 @@ spec-kit 核心（`/speckit.*` 原生命令）只提供「需求 -> 方案 -> �
 
 | 维度 | 后端（CT/UT） | 前端 e2e（TC） |
 |---|---|---|
-| 生成时机 | `testing.plan` 生成用例清单 | plan 生成**简版**清单（编号+场景+类型+覆盖规则）；实现后 `testing.impact` 生成**详细版**功能测试案例集（前置/步骤/预期） |
-| 载体 | test-plan.md（用例清单） | 简版在 test-plan.md；详细版在 impact-report.md「功能测试案例集（e2e 规划）」段 |
+| 生成时机 | `testing.plan` 生成用例清单 | plan 生成**简版**清单（编号+场景+类型+覆盖规则）；实现后 `testing.impact` 生成**详细版**功能测试案例集（Given-When-Then） |
+| 载体 | test-plan.md（用例清单） | 简版在 test-plan.md；详细版在 impact-report.md「功能测试案例集（e2e 规划）」段，按 `e2e-case-template` 模板组织 |
 | 门禁 | gate 硬校验（run_gate 脚本） | **不进门槛**，不脚本化，不要求写 e2e 代码 |
-| 消费方 | 开发者 + AI（implement/gate） | **前端 e2e 测试 AI**（如 Playwright）——案例集被独立转发，每条用例自包含（前置条件/具体测试数据/操作步骤/精确预期文案） |
+| 消费方 | 开发者 + AI（implement/gate） | **前端 e2e 测试 AI**（如 Playwright）——案例集被独立转发，每条用例按 **Given-When-Then** 编写（Given=前置+测试数据 / When=操作步骤 / Then=精确预期文案），自包含可执行 |
 | 追溯 | @Spec ↔ @DisplayName ↔ CT | TC 标注关联 business_rules 编号（可追溯，但不参与 gate 双向对齐） |
 
 > 设计取舍：e2e 做 TDD 成本过高（浏览器环境、稳定性、慢），本框架只做**提前
@@ -359,6 +360,32 @@ gate PASS 后，`testing.report` 遍历 spec.md 全部 business_rules（R1..Rn�
 > 前端 e2e 规划产物不单独建文件：TC 简版清单并入 `test-plan.md`，详细版功能
 > 测试案例集并入 `impact-report.md`（「功能测试案例集（e2e 规划）」段）。
 
+### 3.2.1 命令 × speckit 生成物依赖矩阵
+
+四个测试命令各自消费的 speckit 生成物（含 preset `speckit.implement`
+append 段）：
+
+| 命令 | 参考生成物（输入） | 必需性 | 产出 |
+|---|---|---|---|
+| `/speckit.testing.impact` | git diff / 源码+@Spec 分布 / spec.md | REQUIRED（源码可降级：空仓库仅语义分级） | impact-report.md |
+| `/speckit.testing.plan` | spec.md / plan.md / contracts/ | REQUIRED | test-plan.md |
+| | data-model.md | RECOMMENDED | |
+| | research.md / ImpactReport | OPTIONAL（套风险档阈值） | |
+| `/speckit.testing.gate` | 业务代码 / 测试代码 / spec.md | REQUIRED | gate-result.md（脚本写） |
+| | impact-report.md | REQUIRED（缺失即 FAIL） | |
+| | testing-config.yml | REQUIRED（取阈值） | |
+| `/speckit.testing.report` | gate-result.md | REQUIRED（缺失/FAIL 拒绝生成） | test-report.md |
+| | impact-report.md（引用不重生成）/ spec.md / @Spec 扫描 JSON / test-plan.md（CT 反查） | REQUIRED | |
+| `speckit.implement`（preset append 段） | tasks.md / plan.md / contracts/ / data-model.md | REQUIRED（核心逻辑） | 业务代码 + 测试代码 |
+| | test-plan.md（UT-xx/CT-xx 清单与验收阈值） | IF EXISTS（存在则 MUST 参考） | |
+
+> 链路约定：plan（test-plan.md）→ tasks（按 test-plan.md 生成测试任务，
+> 缺失降级 contracts/+rules 推导）→ implement（参考 test-plan.md 对齐用例）
+> → gate（消费 impact 风险档）→ report（引用 impact + test-plan）。
+> 核心 `speckit.tasks` / `speckit.implement` 本身不读 test-plan.md（核心
+> 无 testing 扩展概念），参考行为由 testing-tdd preset 的 replace/append
+> 模板注入。
+
 ### 3.3 数据流关键约束
 
 - **spec.md 是唯一事实来源**：business_rules 的 R1..Rn 贯穿 impact（分级）/ plan（生成用例）
@@ -499,8 +526,8 @@ AI 会伪造（声称 96% 实际 62.9%）。v0.4 把 gate 的**全部确定性�
 |------|------|------|
 | `constitution-template` | replace | 预置 Principle I（Spec Traceability 置首）+ Principle II（中文文档 + 代码重要部分中文注释）+ Principle III（测试技术栈） |
 | `spec-template` | replace | 加 `## Business Rules`（REQUIRED）+ Error Code Definitions（可选） |
-| `tasks-template` | replace | 测试 REQUIRED + 骨架先行 + 单测先行 + 双标签 `[US1] [R1]` |
-| `speckit.implement` 命令 | append | 强制 @Spec 注解 + 约定参考 + 技术栈 + 单测先行 + 第 4.5 阶段对抗测试 + 第 7 段前端 e2e 规划预留（不写 e2e 代码） |
+| `tasks-template` | replace | 测试 REQUIRED + 骨架先行 + 单测先行 + 双标签 `[US1] [R1]` + **测试任务参考 test-plan.md 用例清单**（存在则用例数量/编号对齐，缺失降级 contracts/+rules 推导并注明） |
+| `speckit.implement` 命令 | append | 强制 @Spec 注解 + 约定参考 + 技术栈 + 单测先行 + 第 4.5 阶段对抗测试 + 第 0 节参考生成物（test-plan.md IF EXISTS）+ 第 7 段前端 e2e 规划预留（不写 e2e 代码） |
 
 详见 `presets/testing-tdd/`。
 

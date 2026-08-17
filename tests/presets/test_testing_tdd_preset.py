@@ -112,6 +112,26 @@ def test_implement_command_enforces_spec_annotation():
     assert "Principle I" in content or "Spec Traceability" in content
 
 
+# ---------- test-plan.md 消费链（v0.6）----------
+
+def test_tasks_template_references_test_plan():
+    """tasks 生成测试任务 MUST 参考 test-plan.md 用例清单（存在时），
+    缺失降级为 contracts/ + business_rules 推导。"""
+    f = PRESET_DIR / "templates" / "tasks-template.md"
+    content = f.read_text(encoding="utf-8")
+    assert "test-plan.md" in content
+    assert "UT-xx" in content
+    assert "CT-xx" in content
+
+
+def test_implement_command_references_test_plan():
+    """implement 参考 test-plan.md（IF EXISTS：用例清单 + 验收阈值）。"""
+    f = PRESET_DIR / "commands" / "speckit.implement.md"
+    content = f.read_text(encoding="utf-8")
+    assert "test-plan.md" in content
+    assert "UT-xx" in content or "CT-xx" in content
+
+
 # ---------- catalog 注册 ----------
 
 def test_preset_registered_in_catalog():

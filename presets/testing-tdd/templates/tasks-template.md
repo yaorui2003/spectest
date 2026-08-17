@@ -7,7 +7,7 @@ description: "Task list template for feature implementation (testing-tdd preset:
 
 **Input**: Design documents from `/specs/[###-feature-name]/`
 
-**Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
+**Prerequisites**: plan.md (required), spec.md (required for user stories), test-plan.md (REQUIRED if speckit.testing.plan has been run — CT/UT 用例清单与验收阈值；缺失时测试任务按 contracts/ 与 business_rules 推导，并在 tasks.md 中注明), research.md, data-model.md, contracts/
 
 **Tests**: Tests are **REQUIRED** (NON-NEGOTIABLE). Every functional/implementation task MUST have a corresponding test task generated BEFORE it. Do not skip test generation.
 
@@ -53,6 +53,15 @@ description: "Task list template for feature implementation (testing-tdd preset:
     组织任务，去掉会破坏核心工作流）
   - [Rn] 是 testing 扩展的规则追溯维度，标注该任务实现的 business_rules
     规则编号（如 R1），支撑 gate 的 @Spec/@DisplayName 双向对齐校验
+
+  测试任务 MUST 参考 test-plan.md 用例清单生成（存在时）：
+  - 单测任务引用 UT-xx 编号（如 "per test-plan.md UT-01..UT-03 (R1 正常/
+    异常/边界)"），用例数量与 test-plan.md 对齐（每条 SpecRule 至少 3 条
+    单测：正常/异常/边界），不得臆造用例数量
+  - 契约测试任务引用 CT-xx 编号（每个 Contract 至少 1 正向 + 每错误码 1 反向）
+  - test-plan.md 缺失时（未运行 speckit.testing.plan）：按 contracts/（契约
+    测试）与 business_rules（单测）推导测试任务，并在生成的 tasks.md 顶部
+    注明"未参考 test-plan.md（未运行 speckit.testing.plan）"
   ============================================================================
   -->
 
@@ -99,9 +108,10 @@ Examples of foundational tasks (adjust based on your project):
 ### Tests for User Story 1 (REQUIRED - TDD) ⚠️
 
 > **MANDATORY: Write these tests FIRST, ensure they FAIL (Red) before ANY implementation task (Green).** Do not skip this subsection.
+> 测试任务数量与内容以 test-plan.md 用例清单为准（存在时）：单测按 UT-xx（每规则至少 3 条），契约测试按 CT-xx（每错误码 1 条）；下方为样板，生成时按实际用例展开。
 
-- [ ] T015 [P] [US1] [R1] Unit test for [user journey] in src/test/java/{{package}}/unit/[Service]Test.java (JUnit5 + Mockito, @DisplayName("R<n>-<描述>"))
-- [ ] T016 [P] [US1] [R1] Contract test for [endpoint] in src/test/java/{{package}}/contract/[Contract]ContractTest.java (WireMock, @DisplayName("R<n>-<描述>"))
+- [ ] T015 [P] [US1] [R1] Unit test per test-plan.md UT-xx for [user journey] in src/test/java/{{package}}/unit/[Service]Test.java (JUnit5 + Mockito, @DisplayName("R<n>-<描述>"))
+- [ ] T016 [P] [US1] [R1] Contract test per test-plan.md CT-xx for [endpoint] in src/test/java/{{package}}/contract/[Contract]ContractTest.java (WireMock, @DisplayName("R<n>-<描述>"))
 
 ### Implementation for User Story 1
 
@@ -127,9 +137,10 @@ Examples of foundational tasks (adjust based on your project):
 ### Tests for User Story 2 (REQUIRED - TDD) ⚠️
 
 > **MANDATORY: Write these tests FIRST, ensure they FAIL (Red) before implementation.**
+> 按 test-plan.md UT-xx / CT-xx 用例清单生成，缺失时按 contracts/ + rules 推导。
 
-- [ ] T023 [P] [US2] [R2] Unit test for [user journey] in src/test/java/{{package}}/unit/[Service]Test.java (JUnit5 + Mockito, @DisplayName("R<n>-<描述>"))
-- [ ] T024 [P] [US2] [R2] Contract test for [endpoint] in src/test/java/{{package}}/contract/[Contract]ContractTest.java (WireMock, @DisplayName("R<n>-<描述>"))
+- [ ] T023 [P] [US2] [R2] Unit test per test-plan.md UT-xx for [user journey] in src/test/java/{{package}}/unit/[Service]Test.java (JUnit5 + Mockito, @DisplayName("R<n>-<描述>"))
+- [ ] T024 [P] [US2] [R2] Contract test per test-plan.md CT-xx for [endpoint] in src/test/java/{{package}}/contract/[Contract]ContractTest.java (WireMock, @DisplayName("R<n>-<描述>"))
 
 ### Implementation for User Story 2
 
@@ -153,9 +164,10 @@ Examples of foundational tasks (adjust based on your project):
 ### Tests for User Story 3 (REQUIRED - TDD) ⚠️
 
 > **MANDATORY: Write these tests FIRST, ensure they FAIL (Red) before implementation.**
+> 按 test-plan.md UT-xx / CT-xx 用例清单生成，缺失时按 contracts/ + rules 推导。
 
-- [ ] T029 [P] [US3] [R3] Unit test for [user journey] in src/test/java/{{package}}/unit/[Service]Test.java (JUnit5 + Mockito, @DisplayName("R<n>-<描述>"))
-- [ ] T030 [P] [US3] [R3] Contract test for [endpoint] in src/test/java/{{package}}/contract/[Contract]ContractTest.java (WireMock, @DisplayName("R<n>-<描述>"))
+- [ ] T029 [P] [US3] [R3] Unit test per test-plan.md UT-xx for [user journey] in src/test/java/{{package}}/unit/[Service]Test.java (JUnit5 + Mockito, @DisplayName("R<n>-<描述>"))
+- [ ] T030 [P] [US3] [R3] Contract test per test-plan.md CT-xx for [endpoint] in src/test/java/{{package}}/contract/[Contract]ContractTest.java (WireMock, @DisplayName("R<n>-<描述>"))
 
 ### Implementation for User Story 3
 

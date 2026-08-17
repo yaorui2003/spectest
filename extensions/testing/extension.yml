@@ -46,6 +46,9 @@ provides:
     - name: test-plan-template
       file: templates/test-plan-template.md
       description: "测试计划文档模板"
+    - name: e2e-case-template
+      file: templates/e2e-case-template.md
+      description: "功能测试案例集模板（Given-When-Then，供前端 e2e 测试 AI 使用）"
     - name: spec-trace-matrix-template
       file: templates/spec-trace-matrix.md
       description: "Spec 追溯矩阵模板"

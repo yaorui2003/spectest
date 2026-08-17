@@ -10,7 +10,7 @@
 - v0.3: ``hooks.before_plan`` 已移除；``hooks.after_implement`` 改为列表形式
   ``[impact, gate]``（impact 在前产出风险、gate 在后消费）
 - ``provides.commands`` 4 个，命名匹配 ``^speckit\\.testing\\.[a-z]+$``
-- ``provides.templates`` 5 个，命名匹配 ``^[a-z-]+$``
+- ``provides.templates`` 6 个（含 e2e-case-template，命名匹配 ``^[a-z-]+$``）
 - ``provides.scripts`` 4 个（scan-spec-annotations + validate-spec-format
   + parse-test-results + scan-test-stack）
 """
@@ -28,7 +28,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MANIFEST_PATH = PROJECT_ROOT / "extensions" / "testing" / "extension.yml"
 
 CMD_NAME_RE = re.compile(r"^speckit\.testing\.[a-z]+$")
-TEMPLATE_NAME_RE = re.compile(r"^[a-z-]+$")
+TEMPLATE_NAME_RE = re.compile(r"^[a-z0-9-]+$")
 
 
 @pytest.fixture(scope="module")
@@ -99,11 +99,20 @@ def test_provides_commands_count_and_naming(manifest):
 
 def test_provides_templates_count_and_naming(manifest):
     templates = manifest["provides"]["templates"]
-    assert len(templates) == 5
+    assert len(templates) == 6
     for t in templates:
         assert TEMPLATE_NAME_RE.match(t["name"]), (
             f"模板名 {t['name']!r} 不匹配 {TEMPLATE_NAME_RE.pattern}"
         )
+
+
+def test_provides_templates_include_e2e_case(manifest):
+    """v0.6: provides.templates 含 e2e-case-template（GWT 功能测试案例集）。"""
+    templates = manifest["provides"]["templates"]
+    names = [t["name"] for t in templates]
+    assert "e2e-case-template" in names, (
+        "provides.templates 必须声明 e2e-case-template"
+    )
 
 
 def test_scripts_declares_run_gate(manifest):

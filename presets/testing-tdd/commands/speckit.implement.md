@@ -5,6 +5,19 @@
 
 实现 Java 业务代码时，以下规则 MUST 遵守：
 
+### 0. 参考生成物（测试代码对齐依据）
+
+生成测试代码时，除 tasks.md 任务清单外，MUST 参考以下已有生成物：
+
+| 生成物 | 必需性 | 用途 |
+|---|---|---|
+| `test-plan.md`（speckit.testing.plan 产物） | IF EXISTS（存在则 MUST 参考） | 测试用例清单 UT-xx / CT-xx 与验收阈值——按清单生成测试（每条 SpecRule 至少 3 条单测：正常/异常/边界；每个 Contract 至少 1 正向 + 每错误码 1 反向），用例数量/场景与 test-plan.md 对齐，不臆造 |
+| `contracts/`（speckit.plan 产物） | REQUIRED | 接口契约（正向请求 + 错误码清单），契约测试依据 |
+| `data-model.md`（speckit.plan 产物） | IF EXISTS | 字段约束，单测边界值依据 |
+
+> test-plan.md 缺失时（未运行 speckit.testing.plan），测试按 contracts/ +
+> business_rules 自行推导，并在产物中注明。
+
 ### 1. @Spec 注解（MUST）
 
 每个实现 Spec 规则的 public 方法 MUST 标注 `@Spec` 注解：
