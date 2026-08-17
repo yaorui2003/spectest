@@ -19,7 +19,8 @@ import java.lang.annotation.Target;
  * </ul>
  *
  * <p>门禁扫描采用源码正则扫描（见 research.md 决策 6），不依赖反射；
- * {@code RUNTIME} 保留策略为未来运行时校验场景预留。
+ * {@code SOURCE} 保留策略：注解仅存于源码、编译时丢弃，符合纯静态扫描实际用途，
+ * 不污染 class 文件。未来若引入运行时反射校验再改回 {@code RUNTIME}。
  *
  * <p>同一方法可携带多条 {@code @Spec}（{@link Repeatable}）。
  *
@@ -32,7 +33,7 @@ import java.lang.annotation.Target;
  * }
  * }</pre>
  */
-@Retention(RetentionPolicy.RUNTIME)
+@Retention(RetentionPolicy.SOURCE)
 @Target({ElementType.METHOD, ElementType.TYPE})
 @Repeatable(Specs.class)
 public @interface Spec {

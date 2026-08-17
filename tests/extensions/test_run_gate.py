@@ -298,7 +298,8 @@ def test_json_output_has_all_contract_fields(gate_fixture):
     for field in [
         "status", "mode", "gate_result_path", "risk_level", "mvn_clean_test",
         "unit_tests", "contract_tests", "coverage", "spec_coverage",
-        "displayname_match", "threshold_results", "fail_reasons",
+        "displayname_match", "adversarial_coverage", "threshold_results",
+        "fail_reasons",
     ]:
         assert field in data, f"缺少契约字段: {field}"
 
@@ -329,6 +330,12 @@ def test_degraded_mode_pass(gate_fixture):
     assert "## Gate Result: PASS" in md
     assert "降级模式（无 Java 环境）" in md
     assert "risk_level: high" in md
+
+    # v0.5：降级模式仍构造 adversarial_coverage（affected_rules/counts 为空，
+    # missing 空），但降级跳过对抗硬判 -> 不 FAIL
+    assert "adversarial_coverage" in data
+    assert data["adversarial_coverage"]["high_risk_rules"] == []
+    assert data["adversarial_coverage"]["missing"] == []
 
 
 # ── 用例 (c): 删 @Spec -> FAIL ──────────────────────────────────────────
@@ -401,6 +408,19 @@ def _make_full_mode_reports(fx: dict) -> None:
     jacoco = fx["tmp_path"] / "target" / "site" / "jacoco" / "jacoco.xml"
     jacoco.parent.mkdir(parents=True)
     jacoco.write_text(JACOCO_XML, encoding="utf-8")
+    # v0.5：给 R1（high 风险规则）补对抗用例，满足步骤 5.5（独立文件，
+    # 不受各用例对 AccountServiceTest.java 的 .replace/.write 影响）
+    (fx["test_src"] / "AdversarialTest.java").write_text(
+        "package com.example;\n"
+        "import org.junit.jupiter.api.Test;\n"
+        "import org.junit.jupiter.api.DisplayName;\n"
+        "class AdversarialTest {\n"
+        '    @Test\n'
+        '    @DisplayName("R1-对抗-边界")\n'
+        "    void testR1Adversarial() {}\n"
+        "}\n",
+        encoding="utf-8",
+    )
 
 
 def _full_mode_inputs(fx: dict, **overrides) -> dict:
@@ -459,8 +479,8 @@ def test_run_full_mode_pass(gate_fixture):
     assert thr["method_coverage"]["threshold"] == 90
     assert thr["complexity_coverage"]["threshold"] == 80
     assert all(t["pass"] for t in result["threshold_results"])
-    # @DisplayName 双向对齐：test-src 7 条全部对齐
-    assert result["displayname_match"] == {"aligned": 7, "total": 7, "mismatch_count": 0, "untested_spec_rules": []}
+    # @DisplayName 双向对齐：test-src 7 条 + AdversarialTest 1 条（R1-对抗）= 8 条全部对齐
+    assert result["displayname_match"] == {"aligned": 8, "total": 8, "mismatch_count": 0, "untested_spec_rules": []}
     assert result["fail_reasons"] == []
 
     # gate-result.md full 格式（含执行环境/单测明细/契约测试明细/Spec 矩阵/判定依据）
@@ -469,8 +489,11 @@ def test_run_full_mode_pass(gate_fixture):
     assert "- mvn clean test: SUCCESS" in md
     assert "target 清理: 已清理" in md
     assert "行覆盖率: 95% (阈值 >= 90%)" in md
-    assert "DisplayName 对齐数: 7 / 7" in md
+    assert "DisplayName 对齐数: 8 / 8" in md
     assert "risk_overrides.high" in md
+    # v0.5：gate-result.md 含关键路径对抗覆盖段
+    assert "关键路径对抗覆盖" in md
+    assert "R1" in md
 
 
 def test_run_full_mode_low_coverage_fail(gate_fixture):
@@ -575,3 +598,53 @@ def test_check_only_core_does_not_write(gate_fixture):
     result = rg.run(inputs)
     assert result["status"] == "PASS"
     assert not gate_result.exists(), "check_only 不应写 gate-result.md"
+
+
+# ── 用例 (h): 对抗性门禁（v0.5 步骤 5.5） ────────────────────────────────
+
+
+def test_run_full_mode_adversarial_pass(gate_fixture):
+    """v0.5：high 风险规则 R1 有对抗用例 -> 步骤 5.5 PASS，不影响整体 PASS。"""
+    _make_full_mode_reports(gate_fixture)  # 已含 R1 对抗用例
+    rg = _load_run_gate_module()
+    result = rg.run(_full_mode_inputs(gate_fixture))
+    assert result["status"] == "PASS"
+    adv = result["adversarial_coverage"]
+    assert adv["critical_path_required"] is True
+    assert "R1" in adv["high_risk_rules"]
+    assert adv["adversarial_counts"].get("R1", 0) >= 1
+    assert adv["missing"] == []
+
+
+def test_run_full_mode_adversarial_fail(gate_fixture):
+    """v0.5：high 风险规则无对抗用例 -> critical_path_required=true -> FAIL。"""
+    _make_full_mode_reports(gate_fixture)
+    # 删除对抗用例文件
+    (gate_fixture["test_src"] / "AdversarialTest.java").unlink()
+    rg = _load_run_gate_module()
+    result = rg.run(_full_mode_inputs(gate_fixture))
+    assert result["status"] == "FAIL"
+    assert any("critical_path_adversarial" in r for r in result["fail_reasons"]), result["fail_reasons"]
+    adv = result["adversarial_coverage"]
+    assert "R1" in adv["missing"]
+
+
+def test_run_full_mode_adversarial_degraded_by_config(gate_fixture):
+    """v0.5：critical_path_required=false -> high 风险无对抗也不 FAIL（advisory 降级）。"""
+    _make_full_mode_reports(gate_fixture)
+    (gate_fixture["test_src"] / "AdversarialTest.java").unlink()  # 无对抗
+    rg = _load_run_gate_module()
+    inputs = _full_mode_inputs(gate_fixture)
+    # 改 config 设 critical_path_required=false
+    cfg_path = gate_fixture["tmp_path"] / "testing-config-degraded.yml"
+    cfg_path.write_text(
+        gate_fixture["config"].read_text(encoding="utf-8")
+        + "\nadversarial:\n  enabled: true\n  critical_path_required: false\n",
+        encoding="utf-8",
+    )
+    inputs["config"] = str(cfg_path)
+    result = rg.run(inputs)
+    assert result["status"] == "PASS"  # 降级：不硬判
+    adv = result["adversarial_coverage"]
+    assert adv["critical_path_required"] is False
+    assert "R1" in adv["missing"]  # 仍统计，但不阻断

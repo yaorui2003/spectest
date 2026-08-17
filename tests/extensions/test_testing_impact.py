@@ -94,6 +94,50 @@ class TestImpactBodySections:
         assert "ImpactReport" in body
 
 
+# ── Body: functional case set (TC, e2e planning, v0.6) ───────────────────────
+
+
+class TestImpactE2ECaseSet:
+    """v0.6: impact 生成功能测试案例集（TC-xx，供前端 e2e 测试 AI 使用）。
+
+    断言只检查内容关键词，不检查表格框线字符（避免冗余）。
+    """
+
+    def test_body_generates_functional_case_set(self):
+        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
+        assert "功能测试案例集" in body
+        assert "TC-" in body
+
+    def test_body_case_set_has_type_categories(self):
+        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
+        assert "正向" in body
+        assert "异常" in body
+        assert "交互" in body
+
+    def test_body_case_set_is_self_contained(self):
+        """每条用例自包含（前置/步骤/预期），可独立转发给 e2e AI。"""
+        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
+        assert "自包含" in body
+        assert "前置" in body
+        assert "预期" in body
+
+    def test_body_case_set_traces_rules(self):
+        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
+        assert "关联" in body
+        assert "business_rules" in body
+
+    def test_body_case_set_has_e2e_ai_guidance(self):
+        """面向 e2e 测试 AI 的提示：具体测试数据/精确文案，禁含糊表述。"""
+        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
+        assert "e2e" in body.lower()
+        assert "测试数据" in body
+        assert "禁止" in body
+
+    def test_body_case_set_not_in_gate(self):
+        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
+        assert "不进门槛" in body or "不进门禁" in body
+
+
 # ── Body: artifact path (v0.4) ───────────────────────────────────────────────
 
 

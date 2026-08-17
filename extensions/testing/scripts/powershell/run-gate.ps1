@@ -60,8 +60,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# 强制 UTF-8 读写，确保中文与 Python 版字节级一致
-$utf8 = [System.Text.UTF8Encoding]::new($false)
+# 强制 UTF-8 输出，确保中文与 Python 版字节级一致
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 $pyDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\python"))
@@ -114,9 +113,17 @@ import run_gate
 args = sys.argv
 def _a(i):
     return args[i] if i < len(args) else ""
-def _json_or_none(i):
-    s = _a(i)
-    return json.loads(s) if s else None
+def _json_or_none(s):
+    import json, os
+    if not s:
+        return None
+    try:
+        if os.path.isfile(s):
+            with open(s, encoding='utf-8') as f:
+                return json.load(f)
+        return json.loads(s)
+    except Exception:
+        return None
 inputs = {
     "source": _a(2),
     "test_source": _a(3),
@@ -128,9 +135,9 @@ inputs = {
     "degraded": _a(9) == "1",
     "mvn_status": _a(10),
     "impact_ok": _a(11) == "1",
-    "scan_stack": _json_or_none(12),
-    "parse_results": _json_or_none(13),
-    "scan_spec": _json_or_none(14),
+    "scan_stack": _json_or_none(_a(12)),
+    "parse_results": _json_or_none(_a(13)),
+    "scan_spec": _json_or_none(_a(14)),
 }
 result = run_gate.run(inputs)
 print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -150,7 +157,29 @@ if (-not $pyExe) {
 
 $checkOnlyFlag = if ($CheckOnly) { "1" } else { "0" }
 
-& $pyExe -c $pyCore $pyDir $Source $TestSource $Spec $Project $FeatureDir $Config `
-    $checkOnlyFlag $degraded $mvnStatus $impactOk $stackJson $resultsJson $specJson
+# ── F5：多行 JSON 不直接作 argv（Win PowerShell 5.1 参数拼接脆弱） ─────
+# 三个子脚本的 JSON 串各写临时文件、传路径；嵌入 python 的 _json_or_none
+# 对路径读文件、对 JSON 串走 json.loads 原逻辑（bash 仍传 JSON 串，两端
+# 共享同一段嵌入代码保持 parity）。try/finally 保证临时文件必清理不泄漏。
+$stackFile = ""
+$resultsFile = ""
+$specFile = ""
+try {
+    if ($degraded -eq "0") {
+        $stackFile = [System.IO.Path]::GetTempFileName()
+        [System.IO.File]::WriteAllText($stackFile, $stackJson, [System.Text.UTF8Encoding]::new($false))
+        $resultsFile = [System.IO.Path]::GetTempFileName()
+        [System.IO.File]::WriteAllText($resultsFile, $resultsJson, [System.Text.UTF8Encoding]::new($false))
+    }
+    $specFile = [System.IO.Path]::GetTempFileName()
+    [System.IO.File]::WriteAllText($specFile, $specJson, [System.Text.UTF8Encoding]::new($false))
 
-exit $LASTEXITCODE
+    & $pyExe -c $pyCore $pyDir $Source $TestSource $Spec $Project $FeatureDir $Config `
+        $checkOnlyFlag $degraded $mvnStatus $impactOk $stackFile $resultsFile $specFile
+    exit $LASTEXITCODE
+}
+finally {
+    if ($stackFile) { Remove-Item -LiteralPath $stackFile -Force -ErrorAction SilentlyContinue }
+    if ($resultsFile) { Remove-Item -LiteralPath $resultsFile -Force -ErrorAction SilentlyContinue }
+    if ($specFile) { Remove-Item -LiteralPath $specFile -Force -ErrorAction SilentlyContinue }
+}

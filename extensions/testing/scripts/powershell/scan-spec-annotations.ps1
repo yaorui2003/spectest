@@ -54,7 +54,7 @@ $inSection = $false
 foreach ($line in $specLines) {
     if ($line -match '^\s*#') {
         $title = $line.ToLower()
-        if ($title -match 'business[\t _-]rules') {
+        if ($title -match 'business[\t _-]+rules') {
             $inSection = $true
         } elseif ($inSection) {
             $inSection = $false
@@ -79,12 +79,41 @@ foreach ($javaFile in $javaFiles) {
     $lines = [System.IO.File]::ReadAllLines($javaFile.FullName, $utf8)
     $package = ""
     $className = ""
+    $inBlock = $false
     # pending 列表：每条 @Spec 追加 @($rule, $cap, $desc, $lineNo)，
     # 支持 @Repeatable 多注解堆叠（Bug #6：单标量会被后一条覆盖）。
     $pending = [System.Collections.Generic.List[object]]::new()
     for ($i = 0; $i -lt $lines.Count; $i++) {
         $line = $lines[$i]
         $lineNo = $i + 1
+        # 注释剥离状态机（方案 4.1）：块注释 /* */（跨行持续）+ 行注释 //。
+        # 只改变 $line 内容、不改 $lineNo —— 行号映射保持原始行号。
+        # $inBlock 在每文件开头重置（不跨文件延续）；continue 跳过整行（块注释中间行）。
+        if ($inBlock) {
+            $closeIdx = $line.IndexOf("*/")
+            if ($closeIdx -ge 0) {
+                $inBlock = $false
+                $line = $line.Substring($closeIdx + 2)
+            } else {
+                continue
+            }
+        }
+        $openIdx = $line.IndexOf("/*")
+        if ($openIdx -ge 0) {
+            $before = $line.Substring(0, $openIdx)
+            $rest = $line.Substring($openIdx + 2)
+            $closeInRest = $rest.IndexOf("*/")
+            if ($closeInRest -ge 0) {
+                $line = $before + $rest.Substring($closeInRest + 2)
+            } else {
+                $inBlock = $true
+                $line = $before
+            }
+        }
+        $slashIdx = $line.IndexOf("//")
+        if ($slashIdx -ge 0) {
+            $line = $line.Substring(0, $slashIdx)
+        }
         # 包名
         if ($package -eq "" -and $line -match '^\s*package\s+([\w.]+)\s*;') {
             $package = $Matches[1]

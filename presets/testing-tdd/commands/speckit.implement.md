@@ -91,8 +91,10 @@ public 方法，**MUST 至少有 1 条对抗用例**。此约束独立于 gate �
 
 - 对抗用例 MUST 标 `@DisplayName("Rn-对抗-<描述>")`，保持 @Spec/@DisplayName
   双向对齐
-- 对抗用例存在性由 AI 在对抗阶段自检 + 关键路径清单核对（run_gate 不校验
-  此条，这是 AI 自律约束）
+- 此约束由 **run_gate 硬判**（v0.5）：`testing-config.yml` 的
+  `adversarial.critical_path_required` 控制——`true`（默认）时 high 风险规则
+  0 对抗用例 -> gate FAIL（阻断）；`false` 时降级为 advisory（gate 跳过对抗
+  硬判，仅统计不阻断）
 
 #### 6.3 渐进式轮次（max_iterations 上限）
 
@@ -108,3 +110,18 @@ public 方法，**MUST 至少有 1 条对抗用例**。此约束独立于 gate �
 - 达标 -> 跳出循环，进 gate（正式 `run_gate`，写 gate-result.md）
 - 未达标且未超 max_iterations -> 下一轮
 - 超限仍未达标 -> **如实进 gate**，gate 会 FAIL（不伪造数据，直击 P0 #1）
+
+### 7. 前端 e2e 测试规划（预留，不写 e2e 代码）
+
+> 本扩展**不要求**编写或执行前端 e2e 测试代码——e2e 不做 TDD、不进门槛
+> （gate 只校验后端单测/契约测试）。但后端行为 MUST 为后续 e2e 测试留好
+> 依据：
+
+- 实现完成后，`after_implement` 钩子触发的 `speckit.testing.impact` 会生成
+  **功能测试案例集**（TC-xx，写入 `specs/<feature>/docs/impact-report.md`），
+  供前端 e2e 测试 AI（如 Playwright）编写 e2e 脚本——实现时无需为此写任何
+  e2e 代码
+- 后端错误码 / 校验行为 / 返回文案 MUST 与前端提示文案约定一致（功能测试
+  案例集中的预期结果以后端实际行为为准）
+- 接口响应 MUST 包含前端展示所需字段（如交易流水号、脱敏账号、剩余余额），
+  否则前端无法呈现案例集中的预期结果

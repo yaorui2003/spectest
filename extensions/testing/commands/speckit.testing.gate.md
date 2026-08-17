@@ -1,5 +1,5 @@
 ---
-description: "Speckit Testing 门禁：AI 调用 run_gate 脚本（mvn clean test + 技术栈校验 + @Spec 扫描 + DisplayName 一致性 + 按风险阈值判定），AI 仅读判定 JSON 输出阻断/通过指令"
+description: "Speckit Testing 门禁：AI 调用 run_gate 脚本（mvn clean test + 技术栈校验 + @Spec 扫描 + DisplayName 一致性 + 关键路径对抗用例硬判 + 按风险阈值判定），AI 仅读判定 JSON 输出阻断/通过指令 + AI 语义交叉验证（SOFT，不改判）"
 scripts:
   sh: ../../scripts/bash/run-gate.sh
   ps: ../../scripts/powershell/run-gate.ps1
@@ -73,7 +73,7 @@ scripts:
 ### 步骤 1：调用 run_gate 脚本
 
 运行 frontmatter `scripts:` 段声明的 `run_gate` 脚本（按项目 `--script
-sh|ps|py` 选择其一），脚本内部按以下 9 步执行（供 AI 理解脚本行为，AI
+sh|ps|py` 选择其一），脚本内部按以下 10 步执行（供 AI 理解脚本行为，AI
 **不要**自行重复执行）：
 
 | 步骤 | 动作 | 失败处理 |
@@ -84,6 +84,7 @@ sh|ps|py` 选择其一），脚本内部按以下 9 步执行（供 AI 理解脚
 | 3 | 调 `parse_test_results` | jacoco.xml / surefire 缺失 -> FAIL（不降级） |
 | 4 | 调 `scan_spec_annotations` | `unimplemented_rules` / `orphan_annotations` 非空 -> FAIL |
 | 5 | 内联解析测试源码 `@DisplayName`，**双向**对齐（DisplayName->@Spec + @Spec->DisplayName） | 不对齐数 > 0 或有 `@Spec` 无测试的规则，且 `require_displayname_match` -> FAIL |
+| 5.5 | 关键路径对抗校验（v0.5，configurable）：读 impact-report 逐规则 risk + 检测 `@DisplayName("Rn-对抗-...")` 对抗用例 | `critical_path_required=true` 且 high 风险规则 0 对抗用例 -> FAIL；`false` 跳过（降级） |
 | 6 | 读 `impact-report.md` 的 `risk_level` + 读 `testing-config.yml` | 套风险档阈值 |
 | 7 | 逐项比对覆盖率 / 通过率 / Spec 覆盖率与阈值 | 任一不达标 -> FAIL |
 | 8 | **脚本直接写 `specs/<feature>/docs/gate-result.md`** + stdout 输出判定 JSON | AI 仅读，不能改判 |
@@ -108,6 +109,54 @@ sh|ps|py` 选择其一），脚本内部按以下 9 步执行（供 AI 理解脚
   bug，须回 spec-kit 源修复并重装扩展，绝不在用户项目内就地打补丁（v0.4 试点
   已出现 AI 给 `scan_test_stack` 加 `@SpringBootTest` 豁免以让违规测试过门禁的
   反例--该豁免与"禁用 `@SpringBootTest` 起容器"规范冲突，已被判定为错误修复）。
+
+### 步骤 3：AI 语义交叉验证（SOFT，不改判，v0.5 新增）
+
+当 `testing-config.yml` 的 `gate.ai_cross_validation: true`（默认）时，在步骤 2
+之后执行。
+
+读取 run_gate 判定 JSON + gate-result.md + 测试源码（`src/test/`）+ 业务代码
+（`src/main/`）+ spec.md，做四维语义检查：
+
+| 维度 | 脚本判了什么 | AI 补判什么 |
+|---|---|---|
+| 规则-测试语义对齐 | @Spec/@DisplayName 编号匹配 | 测试方法体是否真正验证规则业务语义 |
+| 断言质量 | 断言存在 | 断言是否有业务语义（非 assertTrue(true)） |
+| 覆盖率真实性 | JaCoCo % | 覆盖是否来自有意义测试 |
+| @Spec 放置 | rule 编号在 spec.md | @Spec 是否标在真正实现该规则的方法上 |
+
+每维输出 `[PASS/WARN/CRITICAL]` + 说明。CRITICAL = 建议人工复核（不自动阻断）。
+
+**硬约束（MUST）**：
+
+- **不能改判**：HARD FAIL 仍阻断，HARD PASS 不因 AI 发现问题而改 FAIL
+- **不能删除/修改** gate-result.md 中脚本写入的 HARD 段
+- **仅追加** "## AI 交叉验证（SOFT，不影响判定）" 段到 gate-result.md
+- 降级模式（无测试源码）跳过交叉验证
+- check-only 模式跳过交叉验证（不写产物）
+
+输出格式（追加到 gate-result.md 末尾，不改写 HARD 段）：
+
+```markdown
+## AI 交叉验证（SOFT，不影响判定）
+
+### 规则-测试语义对齐
+- R1: PASS - testTransferAmountValidation 测试了金额边界（0/负数/超限）
+- R2: WARN - testCheckBalance 仅测正常余额，未测不足余额分支
+
+### 断言质量
+- PASS - 未发现 assertTrue(true) 空断言
+
+### 覆盖率真实性
+- PASS - 100% 覆盖来自有意义测试
+
+### @Spec 放置
+- PASS - 各 @Spec 标注在实现该规则的方法上
+
+### 交叉验证结论
+- 1 项 WARN（R2 测试覆盖不全），建议补测不足余额分支
+- 0 项 CRITICAL
+```
 
 ### run_gate 内部逻辑说明
 
@@ -187,8 +236,8 @@ WireMock 契约测试。
 | medium | >=80% | >=70% | >=80% | >=85% | >=70% | 100% | >=95% | 100% |
 | low | >=70% | >=70% | >=70% | >=80% | >=60% | 100% | >=95% | 100% |
 
-**判定 PASS/FAIL**：脚本逐项比对步骤 0-7 的实际值，任一检查未过 -> FAIL，
-全部通过 -> PASS。
+**判定 PASS/FAIL**：脚本逐项比对步骤 0-8（含 5.5 关键路径对抗校验）的实际
+值，任一检查未过 -> FAIL，全部通过 -> PASS。
 
 判定 FAIL 的条件（任一即 FAIL）：
 
@@ -199,6 +248,7 @@ WireMock 契约测试。
 - 契约测试通过率 < 阈值
 - `require_displayname_match` 为 true 且 `displayname_mismatch_count` > 0
 - `require_displayname_match` 为 true 且 `untested_spec_rules` 非空（有 `@Spec` 无对应测试）
+- `critical_path_required=true` 且 high 风险规则无对抗用例（`@DisplayName("Rn-对抗-...")`）
 - Spec 规则覆盖率 < 100%
 
 ### JaCoCo/Surefire 配置参考
@@ -312,6 +362,18 @@ Java 项目）时，**脚本降级为仅做 `@Spec` 静态扫描**，跳过 `mvn
 
 请在具备 Java 环境时重新运行门禁以获取完整校验。
 ```
+
+## 对抗门禁降级模式（v0.5）
+
+`testing-config.yml` 的 `adversarial` 段两级开关控制对抗用例门禁：
+
+| `adversarial.enabled` | `adversarial.critical_path_required` | 行为 |
+|---|---|---|
+| true（默认） | true（默认） | implement 4.5 做 + **gate 硬判**：high 风险规则 0 对抗用例 -> FAIL（full） |
+| true | false | implement 4.5 做 + gate 不硬判（advisory，仅统计不阻断） |
+| false | false | implement 4.5 不做 + gate 不校验（off，最宽降级） |
+
+> `enabled` 控制 AI 行为（implement 4.5 阶段），`critical_path_required` 控制 gate 脚本是否硬判。降级模式（无 Java 环境）自动跳过对抗校验。
 
 ## PASS 后续动作
 

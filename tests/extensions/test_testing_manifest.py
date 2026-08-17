@@ -4,7 +4,7 @@
 ``specs/001-speckit-testing-ext/contracts/manifest-schema.md``：
 
 - ``schema_version == "1.0"``
-- ``extension.id == "testing"``、``version == "1.1.2"``（v0.4.x 维护升版：#5 禁改脚本 + #6 @Repeatable + #1 error_codes 噪声 + P1 反向 DisplayName 检查 + P4 @Spec parity 补全）
+- ``extension.id == "testing"``、``version == "1.3.0"``（v0.6 minor 升版：前端 e2e 测试规划泛化——plan 前端测试项 TC + impact 功能测试案例集）
 - ``requires.speckit_version == ">=0.2.0"``
 - ``hooks`` 为顶层字段（不在 ``provides`` 内）
 - v0.3: ``hooks.before_plan`` 已移除；``hooks.after_implement`` 改为列表形式
@@ -45,7 +45,7 @@ def test_schema_version(manifest):
 def test_extension_identity(manifest):
     ext = manifest["extension"]
     assert ext["id"] == "testing"
-    assert ext["version"] == "1.1.2"
+    assert ext["version"] == "1.3.0"
 
 
 def test_requires_speckit_version(manifest):

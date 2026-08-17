@@ -233,3 +233,88 @@ class TestGateSiblingCommandToken:
         body = _read_body(GATE_MD.read_text(encoding="utf-8"))
         # token must be used; hardcoding /speckit.testing.report is forbidden
         assert "/speckit.testing.report" not in body
+
+
+# ── v0.5: 步骤 3 AI 语义交叉验证（SOFT）+ 步骤 5.5 对抗硬判 ─────────────────
+
+
+class TestGateV05AI:
+
+    def test_body_has_step_3_cross_validation(self):
+        """gate.md 必须含步骤 3（AI 语义交叉验证，SOFT）。"""
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "步骤 3" in body
+        assert "AI 语义交叉验证" in body
+
+    def test_body_marks_soft_and_no_override(self):
+        """交叉验证是 SOFT 层，AI 不能改判 HARD 判定。"""
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "SOFT" in body
+        assert "不能改判" in body
+        assert "不改判" in body
+
+    def test_body_ai_cross_validation_governed_by_config(self):
+        """gate.md 必须引用 testing-config 的 ai_cross_validation 配置。"""
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "ai_cross_validation" in body
+
+    def test_body_mentions_four_dimensions(self):
+        """四维语义检查必须出现在 gate.md。"""
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        for marker in ["规则-测试语义对齐", "断言质量", "覆盖率真实性", "@Spec 放置"]:
+            assert marker in body, f"缺四维检查维度: {marker}"
+
+    def test_body_only_appends_soft_section(self):
+        """AI 仅追加 SOFT 段到 gate-result.md，不删除/修改脚本 HARD 段。"""
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "仅追加" in body
+        assert "AI 交叉验证（SOFT，不影响判定）" in body
+
+
+class TestGateV05Adversarial:
+
+    def test_body_has_step_5_5(self):
+        """gate.md 步骤表必须含步骤 5.5（关键路径对抗校验）。"""
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "5.5" in body
+        assert "关键路径对抗校验" in body
+
+    def test_body_references_critical_path_required(self):
+        """步骤 5.5 由 critical_path_required 配置控制（可降级）。"""
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "critical_path_required" in body
+
+    def test_body_fail_condition_adversarial(self):
+        """判定 FAIL 条件必须含：high 风险规则 0 对抗用例 -> FAIL。"""
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert r"R(\d+)-对抗" in body or "Rn-对抗" in body
+        assert "high 风险规则" in body
+
+    def test_body_adversarial_degradation_table(self):
+        """降级模式段必须解释 adversarial.enabled / critical_path_required 组合。"""
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "对抗门禁降级模式" in body
+        assert "adversarial.enabled" in body
+
+
+# ── v0.5: config（testing-config.template.yml）新语义 ──────────────────────
+
+
+class TestGateV05Config:
+
+    CONFIG_PATH = PROJECT_ROOT / "extensions" / "testing" / "config" / "testing-config.template.yml"
+
+    def test_config_has_ai_cross_validation(self):
+        text = self.CONFIG_PATH.read_text(encoding="utf-8")
+        assert "ai_cross_validation: true" in text
+
+    def test_config_critical_path_required_new_semantics(self):
+        text = self.CONFIG_PATH.read_text(encoding="utf-8")
+        assert "critical_path_required" in text
+        # v0.5 新语义注释：gate 硬判 / 降级
+        assert "hard FAIL" in text or "硬判" in text
+        assert "降级" in text
+
+    def test_config_adversarial_enabled_comment(self):
+        text = self.CONFIG_PATH.read_text(encoding="utf-8")
+        assert "enabled" in text

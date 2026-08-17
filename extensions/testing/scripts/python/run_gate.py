@@ -5,7 +5,7 @@ v0.4 核心改造：把 ``speckit.testing.gate`` 门禁的全部确定性逻辑�
 AI 仅读 stdout 判定 JSON，**不能改判、不能补写 gate-result.md、不能跳过步骤**
 （直击试点 P0 #1：Agent 伪造覆盖率）。
 
-职责（v0.4 第五章 5.2 的 9 步）:
+职责（v0.4 第五章 5.2 的 9 步 + v0.5 步骤 5.5 关键路径对抗校验）:
 
 0. 检查 ``specs/<feature>/docs/impact-report.md`` 存在（不存在 -> FAIL，堵 P0 #3）
 1. ``mvn clean test``（强制 clean，杜绝 target 残留污染，堵 P0 #2）
@@ -13,6 +13,9 @@ AI 仅读 stdout 判定 JSON，**不能改判、不能补写 gate-result.md、�
 3. 调 ``parse_test_results``（jacoco.xml/surefire-reports 缺失 -> FAIL，不降级）
 4. 调 ``scan_spec_annotations``（unimplemented_rules/orphan_annotations 非空 -> FAIL）
 5. 内联解析 test 源码 ``@DisplayName("Rn-...")`` 算对齐数
+5.5. 关键路径对抗校验（v0.5 新增）：读 impact-report 逐规则 risk + 检测
+    ``@DisplayName("Rn-对抗-...")``；``critical_path_required=true`` 且 high
+    风险规则 0 对抗用例 -> FAIL（configurable，false 降级跳过）
 6. 读 ``impact-report.md`` 的 ``risk_level`` + 读 ``testing-config.yml`` 套风险档阈值
 7. 逐项比对覆盖率/通过率/Spec 覆盖率与阈值
 8. **脚本直接写 ``specs/<feature>/docs/gate-result.md``** + stdout 输出判定 JSON
@@ -23,8 +26,9 @@ Spec 覆盖率阈值判定），跳过步骤 1-3/5。降级时 gate-result.md �
 "降级模式（无 Java 环境）"。这是唯一降级场景；Java 项目缺 JaCoCo/surefire
 报告**不降级，直接 FAIL**。
 
-``--check-only`` 子模式：供 implement 第 4.5 阶段（对抗测试）调用，只跑步骤 1-7
-不写 gate-result.md，输出当前覆盖率与阈值差距 JSON，供 AI 决定补测方向。
+``--check-only`` 子模式：供 implement 第 4.5 阶段（对抗测试）调用，只跑步骤 1-8
+（含 5.5 对抗校验）不写 gate-result.md，输出当前覆盖率与阈值差距 JSON，
+供 AI 决定补测方向。
 
 用法::
 
@@ -51,6 +55,51 @@ from pathlib import Path
 
 # @DisplayName 内联解析正则：@DisplayName("Rn-<描述>")，提取规则编号
 DISPLAYNAME_RE = re.compile(r'@DisplayName\s*\(\s*"R(\d+)-')
+
+# 对抗用例识别：@DisplayName("Rn-对抗-...")，提取规则编号（v0.5 步骤 5.5）
+ADVERSARIAL_RE = re.compile(r'@DisplayName\s*\(\s*"R(\d+)-对抗')
+
+
+def _parse_affected_rules(impact_path: Path) -> dict[str, str]:
+    """从 impact-report.md 解析逐规则 risk（rule -> high/medium/low）。
+
+    容错：解析失败返回空 dict（不致 gate FAIL，仅跳过对抗硬判）。
+    逐行扫描 "- rule: Rn" 与后续 "risk: level" 配对。
+    """
+    try:
+        text = impact_path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    rules: dict[str, str] = {}
+    current_rule = None
+    for line in text.splitlines():
+        m = re.match(r'\s*-\s*rule:\s*(R\d+)', line)
+        if m:
+            current_rule = m.group(1)
+            continue
+        if current_rule:
+            m = re.match(r'\s*risk:\s*(high|medium|low)', line)
+            if m:
+                rules[current_rule] = m.group(1)
+                current_rule = None
+    return rules
+
+
+def _count_adversarial_tests(test_source: str) -> dict[str, int]:
+    """扫描测试源码，统计每规则的对抗用例数（@DisplayName("Rn-对抗-...")）。"""
+    counts: dict[str, int] = {}
+    src = Path(test_source)
+    if not src.is_dir():
+        return counts
+    for java_file in sorted(src.rglob("*.java")):
+        try:
+            text = java_file.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for m in ADVERSARIAL_RE.finditer(text):
+            rule = "R" + m.group(1)
+            counts[rule] = counts.get(rule, 0) + 1
+    return counts
 
 # 默认阈值（与 config/testing-config.template.yml 的 gate 段一致，配置缺失时兜底）
 _DEFAULT_UNIT = {
@@ -278,6 +327,17 @@ def _format_gate_result_md(result: dict) -> str:
     if disp.get("untested_spec_rules"):
         lines.append(f"- 有 @Spec 无 @DisplayName 测试的规则: {disp['untested_spec_rules']}")
     lines.append("")
+    lines.append("### 关键路径对抗覆盖")
+    if result.get("mode") == "degraded":
+        lines.append("- 未启用（降级模式，无 Java 环境跳过对抗校验）")
+    else:
+        adv = result["adversarial_coverage"]
+        lines.append(f"- critical_path_required: {adv['critical_path_required']}")
+        lines.append(f"- high 风险规则: {adv['high_risk_rules']}")
+        lines.append(f"- 对抗用例分布: {adv['adversarial_counts']}")
+        if adv["missing"]:
+            lines.append(f"- 缺对抗用例的 high 风险规则: {adv['missing']}")
+    lines.append("")
     lines.append("### 判定依据")
     lines.append(f"- risk_level: {risk}")
     if risk in ("high", "medium", "low"):
@@ -408,6 +468,28 @@ def run(inputs: dict) -> dict:
                     f" 但无 @DisplayName 测试 -> {untested}"
                 )
 
+    # 步骤 5.5：关键路径对抗校验（v0.5 新增，configurable）
+    adversarial_cfg = cfg.get("adversarial", {}) if isinstance(cfg.get("adversarial"), dict) else {}
+    critical_path_required = bool(adversarial_cfg.get("critical_path_required", True))
+    affected_rules = _parse_affected_rules(impact_path) if not degraded else {}
+    adversarial_counts = _count_adversarial_tests(test_source) if not degraded else {}
+    high_risk_rules = [r for r, risk in affected_rules.items() if risk == "high"]
+    missing_adversarial = [r for r in high_risk_rules if adversarial_counts.get(r, 0) == 0]
+
+    adversarial_coverage = {
+        "critical_path_required": critical_path_required,
+        "high_risk_rules": high_risk_rules,
+        "adversarial_counts": adversarial_counts,
+        "missing": missing_adversarial,
+    }
+
+    if critical_path_required and not degraded and missing_adversarial:
+        fail_reasons.append(
+            f"critical_path_adversarial: high 风险规则 {missing_adversarial}"
+            " 无对抗用例（@DisplayName(\"Rn-对抗-...\")) -> 补对抗用例"
+            " 或设 critical_path_required: false 降级"
+        )
+
     # 步骤 7：阈值逐项比对
     threshold_results: list[dict] = []
     if degraded:
@@ -469,6 +551,7 @@ def run(inputs: dict) -> dict:
         "coverage": coverage,
         "spec_coverage": spec_coverage,
         "displayname_match": displayname_match,
+        "adversarial_coverage": adversarial_coverage,
         "threshold_results": threshold_results,
         "fail_reasons": fail_reasons,
     }

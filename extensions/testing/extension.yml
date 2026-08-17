@@ -3,8 +3,8 @@ schema_version: "1.0"
 extension:
   id: testing
   name: Speckit Testing
-  version: 1.1.2
-  description: "Spec 驱动测试先行验证，含 @Spec 注解追溯与自动门禁（技术栈必需前置 + 脚本化 + 硬校验）"
+  version: 1.3.0
+  description: "Spec 驱动测试先行验证，含 @Spec 注解追溯与自动门禁（技术栈必需前置 + 脚本化 + 硬校验），并含前端 e2e 测试规划（TC 用例 + 功能测试案例集）"
   author: speckit-core
   repository: https://github.com/yaorui2003/spectest
   license: MIT

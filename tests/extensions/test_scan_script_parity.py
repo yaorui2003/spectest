@@ -601,6 +601,171 @@ def test_parity_same_line_spec_ps(tmp_path: Path):
     _assert_parity(py_out, ps_out, "同一行 @Spec+方法", "pwsh")
 
 
+# ── 用例 (f): Javadoc 幻影（注释跳过状态机，修发现 A） ──────────────────────
+
+
+def _make_javadoc_phantom_java() -> str:
+    """生成含注释幻影 @Spec 的 PhantomService.java（发现 A 修复验证）。
+
+    块注释（Javadoc）内含 ``@Spec(rule="R99")``、行注释内含
+    ``@Spec(rule="R88")`` —— 注释状态机须将其跳过（不算幻影注解）；
+    仅保留真实方法级 ``@Spec(rule="R1")``。
+    """
+    return """\
+package com.example;
+import com.speckit.testing.Spec;
+
+/**
+ * 示例注解（Javadoc，必须被注释跳过）：
+ * @Spec(capability = "transfer", rule = "R99", description = "幻影")
+ */
+@org.springframework.stereotype.Service
+public class PhantomService {
+
+    @Spec(capability = "transfer", rule = "R1", description = "真实规则")
+    public void transfer() {
+    }
+
+    // @Spec(capability = "transfer", rule = "R88", description = "行注释幻影")
+    public void helper() {
+    }
+}
+"""
+
+
+@requires_bash
+@pytest.mark.skipif(not SH_SCRIPT.exists(), reason="bash 扫描脚本尚未实现")
+def test_parity_javadoc_phantom_sh(tmp_path: Path):
+    """Javadoc 幻影：Python 与 bash 字节级一致 + 注释内 @Spec 被跳过（发现 A）。
+
+    场景：Javadoc 块注释含 R99 幻影、行注释含 R88 幻影，仅 R1 为真实注解。
+    修复前三语言把 R99/R88 误扫为幻影注解（orphan_annotations 污染）；
+    修复后仅 1 条注解 / coverage 14%，orphan 为空。
+    """
+    src_dir, spec_path = _make_fixture(tmp_path)
+    (src_dir / "PhantomService.java").write_text(
+        _make_javadoc_phantom_java(), encoding="utf-8"
+    )
+
+    py_out = _run_py(src_dir, spec_path)
+    sh_out = _run_sh(src_dir, spec_path)
+    _assert_parity(py_out, sh_out, "Javadoc 幻影", "bash")
+
+    # 内容断言：仅 R1 真实注解，R99/R88 不出现，coverage 14%（1/7）
+    data = json.loads(py_out)
+    assert len(data["annotations"]) == 1
+    assert data["annotations"][0]["rule"] == "R1"
+    assert data["annotations"][0]["location"] == "com.example.PhantomService.transfer:11"
+    assert "R99" not in json.dumps(data)
+    assert "R88" not in json.dumps(data)
+    assert data["coverage_percent"] == round(1 / 7 * 100)  # 14
+    assert data["unimplemented_rules"] == ["R2", "R3", "R4", "R5", "R6", "R7"]
+    assert data["orphan_annotations"] == []
+
+
+@pytest.mark.skipif(not HAS_PWSH, reason="pwsh 不可用")
+@pytest.mark.skipif(not PS_SCRIPT.exists(), reason="ps1 扫描脚本尚未实现")
+def test_parity_javadoc_phantom_ps(tmp_path: Path):
+    """Javadoc 幻影：Python 与 PowerShell 字节级一致（发现 A）。"""
+    src_dir, spec_path = _make_fixture(tmp_path)
+    (src_dir / "PhantomService.java").write_text(
+        _make_javadoc_phantom_java(), encoding="utf-8"
+    )
+
+    py_out = _run_py(src_dir, spec_path)
+    ps_out = _run_ps(src_dir, spec_path)
+    _assert_parity(py_out, ps_out, "Javadoc 幻影", "pwsh")
+
+
+# ── 用例 (g): 多分隔符标题（business_rules 量词补 +，修 F4） ────────────────
+
+
+# spec.md 用 `## Business  Rules`（两个空格分隔）标题 + R1-R3 三条规则
+SPEC_MD_MULTI_SPACE = """\
+# Transfer
+
+## Business  Rules
+
+- R1: 转账金额必须大于0
+- R2: 转账账户必须有足够余额
+- R3: 不可向冻结账户转账
+
+## API
+
+POST /api/v1/accounts/transfer
+"""
+
+
+def _make_multi_space_java() -> str:
+    """生成 R1-R3 三注解的 MultiSpaceService.java（多分隔符标题场景）。"""
+    return """\
+package com.example;
+
+import com.speckit.testing.Spec;
+
+public class MultiSpaceService {
+
+    @Spec(capability = "transfer", rule = "R1", description = "金额校验")
+    public void transfer() {
+    }
+
+    @Spec(capability = "transfer", rule = "R2", description = "余额校验")
+    public void checkBalance() {
+    }
+
+    @Spec(capability = "transfer", rule = "R3", description = "冻结校验")
+    public void isFrozen() {
+    }
+}
+"""
+
+
+def _make_multi_space_fixture(tmp_path: Path) -> tuple[Path, Path]:
+    """创建多分隔符标题 fixture：spec.md 用双空格标题 + R1-R3 源码。"""
+    spec_path = tmp_path / "spec.md"
+    spec_path.write_text(SPEC_MD_MULTI_SPACE, encoding="utf-8")
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "MultiSpaceService.java").write_text(
+        _make_multi_space_java(), encoding="utf-8"
+    )
+    return src_dir, spec_path
+
+
+@requires_bash
+@pytest.mark.skipif(not SH_SCRIPT.exists(), reason="bash 扫描脚本尚未实现")
+def test_parity_multi_space_header_sh(tmp_path: Path):
+    """多分隔符标题（## Business  Rules 双空格）：Python 与 bash 字节级一致（F4）。
+
+    场景：business_rules 章节标题用两个空格分隔 —— 修复前 bash/ps 的
+    ``business[\t _-]rules``（无 +）只匹配单个空格，漏识别章节 -> 0 规则；
+    修复后补 ``+`` 与 Python 的 ``[\\s_-]+`` 等价，正确识别 R1-R3 -> coverage 100%。
+    """
+    src_dir, spec_path = _make_multi_space_fixture(tmp_path)
+
+    py_out = _run_py(src_dir, spec_path)
+    sh_out = _run_sh(src_dir, spec_path)
+    _assert_parity(py_out, sh_out, "多分隔符标题", "bash")
+
+    # 内容断言：R1-R3 全识别，coverage 100%
+    data = json.loads(py_out)
+    assert data["spec_rules"] == ["R1", "R2", "R3"]
+    assert data["coverage_percent"] == 100
+    assert data["unimplemented_rules"] == []
+    assert data["orphan_annotations"] == []
+
+
+@pytest.mark.skipif(not HAS_PWSH, reason="pwsh 不可用")
+@pytest.mark.skipif(not PS_SCRIPT.exists(), reason="ps1 扫描脚本尚未实现")
+def test_parity_multi_space_header_ps(tmp_path: Path):
+    """多分隔符标题（## Business  Rules 双空格）：Python 与 PowerShell 字节级一致（F4）。"""
+    src_dir, spec_path = _make_multi_space_fixture(tmp_path)
+
+    py_out = _run_py(src_dir, spec_path)
+    ps_out = _run_ps(src_dir, spec_path)
+    _assert_parity(py_out, ps_out, "多分隔符标题", "pwsh")
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # v0.3 新增脚本 parity 测试：validate_spec_format / parse_test_results / scan_test_stack
 # ═══════════════════════════════════════════════════════════════════════════════

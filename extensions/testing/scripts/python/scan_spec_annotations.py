@@ -81,7 +81,11 @@ def parse_spec_rules(spec_path: Path) -> list[str]:
 
 
 def _find_method_name(lines: list[str], spec_line_idx: int) -> str | None:
-    """从 @Spec 行（含）向下查找方法名，跳过其他注解行。"""
+    """从 @Spec 行（含）向下查找方法名，跳过其他注解行。
+
+    传入的 ``lines`` 必须是注释剥离后的有效行列表（与原始行等长），
+    以保证与包名/类名/@Spec 查找共用同一份"有效行集"。
+    """
     upper = min(spec_line_idx + _METHOD_SCAN_WINDOW, len(lines))
     for j in range(spec_line_idx, upper):
         line = lines[j]
@@ -93,14 +97,52 @@ def _find_method_name(lines: list[str], spec_line_idx: int) -> str | None:
     return None
 
 
+def _strip_comments(lines: list[str]) -> list[str]:
+    """对 Java 源码行做注释剥离（方案 4.1 状态机），返回与输入**等长**的有效行列表。
+
+    块注释 ``/* ... */`` 可跨行持续（``in_block`` 在单文件内贯穿）；
+    行注释 ``//`` 截断到行尾。剥离只改变行内容、不改变行数，因此返回列表的
+    索引与原始行号一一对应 —— 调用方后续查找用 ``stripped[i]`` 取内容、
+    用原始 ``i + 1`` 作 location 行号，行号不会错位。
+    """
+    stripped: list[str] = []
+    in_block = False
+    for line in lines:
+        if in_block:
+            if "*/" in line:
+                in_block = False
+                line = line[line.index("*/") + 2:]
+            else:
+                stripped.append("")
+                continue
+        if "/*" in line:
+            idx = line.index("/*")
+            before = line[:idx]
+            rest = line[idx + 2:]
+            if "*/" in rest:
+                line = before + rest[rest.index("*/") + 2:]
+            else:
+                in_block = True
+                line = before
+        if "//" in line:
+            line = line[: line.index("//")]
+        stripped.append(line)
+    return stripped
+
+
 def parse_java_file(java_path: Path) -> list[dict]:
-    """解析单个 .java 文件，提取 @Spec 注解（含 location）。"""
+    """解析单个 .java 文件，提取 @Spec 注解（含 location）。
+
+    先对整个文件做注释剥离（方案 4.1）生成有效行列表，包名/类名/@Spec/方法名
+    查找全部基于有效行；但 location 的 ``:i + 1`` 仍指向原始文件行号。
+    """
     text = java_path.read_text(encoding="utf-8")
     lines = text.splitlines()
+    stripped = _strip_comments(lines)
 
     # 提取包名
     package = ""
-    for line in lines:
+    for line in stripped:
         m = PACKAGE_RE.match(line)
         if m:
             package = m.group(1)
@@ -108,17 +150,17 @@ def parse_java_file(java_path: Path) -> list[dict]:
 
     # 提取类名
     class_name = ""
-    for line in lines:
+    for line in stripped:
         m = CLASS_RE.search(line)
         if m:
             class_name = m.group(1)
             break
 
     annotations: list[dict] = []
-    for i, line in enumerate(lines):
+    for i, line in enumerate(stripped):
         for m in SPEC_ANNOTATION_RE.finditer(line):
             capability, rule, description = m.group(1), m.group(2), m.group(3) or ""
-            method_name = _find_method_name(lines, i)
+            method_name = _find_method_name(stripped, i)
             if method_name is None:
                 method_name = class_name  # 类级注解兜底用类名
             if package:

@@ -1,14 +1,14 @@
 ---
-description: "Speckit Testing 测试计划生成：以 speckit.plan 已产出的 spec.md/plan.md/contracts 等文档为输入，生成契约测试与单测用例清单，注重单测质量，按风险或默认阈值给验收标准与排期建议"
+description: "Speckit Testing 测试计划生成：以 speckit.plan 已产出的 spec.md/plan.md/contracts 等文档为输入，生成契约测试、单测用例与前端测试项（TC，e2e 规划）清单，注重单测质量，按风险或默认阈值给验收标准与排期建议"
 ---
 
 # Speckit Testing Plan
 
 本命令为手动命令（不绑钩子），在 `speckit.plan` 之后、`speckit.tasks`
 之前运行。**以 speckit.plan 已产出的 md 文档为输入**（spec.md / plan.md /
-contracts/ / data-model.md / research.md），生成契约测试与单测用例清单
-（标注规则编号）、验收阈值与排期建议，引用 `test-plan-template` 模板
-组织文档结构。
+contracts/ / data-model.md / research.md），生成契约测试、单测用例清单
+（标注规则编号）与前端测试项（TC，e2e 规划简版）、验收阈值与排期建议，
+引用 `test-plan-template` 模板组织文档结构。
 
 > **ImpactReport 为可选输入**：用例清单的生成完全不依赖 ImpactReport--
 > 它仅用于步骤 1 的阈值分档。若 ImpactReport 存在（如 after_implement
@@ -64,6 +64,27 @@ contracts/ / data-model.md / research.md），生成契约测试与单测用例�
 - 命名规则：`CT-<序号>`（如 `CT-01`、`CT-02`...）
 
 契约不变量：每个 `Contract` 至少 1 条正向 + 每错误码 1 条反向契约测试。
+
+### 步骤 2.5：生成前端测试项（TC，e2e 规划简版）
+
+遍历 `spec.md` 的 `business_rules`，识别**用户可感知行为**（校验提示 / 错误
+提示 / 成功反馈 / 交互流程）的规则，为每条生成一条前端测试项（`TC-<序号>`，
+如 TC-01、TC-02...，编号与 CT/UT 独立）：
+
+- **分类标签**：
+  - `[正向]`：正常业务流（happy path），如"正常转账全流程"
+  - `[异常]`：错误/校验场景的前端提示，如"转账金额校验提示"、"余额不足提示"
+  - `[交互]`：UI 交互流，如"转账确认弹窗交互"、"多步操作"
+- **覆盖规则**：标注对应 `business_rules` 编号（可多个，逗号分隔），保证
+  与后端规则可追溯
+- **详略**：本清单为**规划级简版**（编号 + 场景 + 标签 + 覆盖规则），**不写
+  测试步骤/预期结果**；详细测试步骤与预期由实现后的 `speckit.testing.impact`
+  生成功能测试案例集（写入 `impact-report.md`，供前端 e2e 测试 AI 使用），
+  此处不重复展开
+
+> **e2e 定位**：前端测试项用于 e2e 测试**规划**，**不进门槛**——gate 只校验
+> 后端单测/契约测试，不要求生成或执行 e2e 测试代码。纯后端内部行为（事务、
+> 幂等、数据一致性）若无可见 UI 效果，不生成 TC。
 
 ### 步骤 3：遍历 business_rules，生成单测用例（注重质量）
 
@@ -130,6 +151,15 @@ contracts/ / data-model.md / research.md），生成契约测试与单测用例�
 ## 单测用例（UT-xx）
 | 编号 | 规则 | 路径 | @DisplayName | 被测方法 | 优先级 |
 
+## 前端测试项（TC-xx，e2e 规划简版）
+| 编号 | 场景 | 测试类型 | 覆盖规则 |
+| TC-01 | 正常转账全流程 | [正向] | R6 |
+| TC-02 | 转账金额校验提示 | [异常] | R1 |
+| TC-03 | 冻结账户转账提示 | [异常] | R3 |
+| TC-04 | 余额不足提示 | [异常] | R4 |
+| TC-05 | 转账成功结果展示 | [正向] | R6 |
+| TC-06 | 转账确认弹窗交互 | [交互] | R6 |
+
 ## 排期建议（单测先行）
 | 阶段 | 用例 | 依赖 |
 
@@ -142,6 +172,9 @@ test_plan_path: specs/<feature>/docs/test-plan.md
 - 每个 `Contract` 至少 1 条正向 + 每错误码 1 条反向契约测试
 - 每条 `SpecRule` 至少 3 条单测（正常 / 异常 / 边界），满足 3.2 质量要求
 - 单测 `@DisplayName` 格式 `R<n>-<描述>`，与 `@Spec(rule="Rn")` 双向对齐
+- 每条 TC 的覆盖规则必须存在于 `business_rules`
+- 前端测试项为规划级简版（不含步骤/预期），**不进门槛**；详细内容由
+  `speckit.testing.impact` 生成，此处不重复展开
 - 阈值：`ImpactReport` 存在则风险档，否则 default 档
 - `TestPlan` 产物路径必须可被后续 `speckit.tasks` 读取（默认写入
   `specs/<feature>/docs/test-plan.md`）
@@ -154,6 +187,7 @@ test_plan_path: specs/<feature>/docs/test-plan.md
 - 验收阈值段
 - 契约测试用例表
 - 单测用例表
+- 前端测试项表（TC，e2e 规划）
 - 排期建议表（单测先行）
 
 ## Done When
@@ -163,5 +197,6 @@ test_plan_path: specs/<feature>/docs/test-plan.md
 - [ ] `contracts/` 每个接口已生成契约测试用例（正向 1 + 每错误码 1）
 - [ ] `business_rules` 每条规则已生成单测用例（正常 / 异常 / 边界，
       满足 3.2 全部质量要求）
+- [ ] 已生成前端测试项（TC-xx，标注分类标签与覆盖规则）
 - [ ] 排期建议已产出（**单测先行**，契约测试次之）
 - [ ] `TestPlan` 已按 `test-plan-template` 组织并写入产物路径

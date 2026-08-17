@@ -108,6 +108,39 @@ class TestPlanTemplateReference:
         assert "test-plan-template" in body
 
 
+# ── Body: frontend e2e test cases (TC, v0.6) ──────────────────────────────────
+
+
+class TestPlanFrontendTestCases:
+    """v0.6: plan 生成前端测试项（TC，e2e 规划简版，标注类型与覆盖规则）。"""
+
+    def test_body_generates_frontend_test_cases(self):
+        body = _read_body(PLAN_MD.read_text(encoding="utf-8"))
+        assert "前端测试项" in body
+        assert "TC-" in body
+
+    def test_body_tc_has_type_tags(self):
+        body = _read_body(PLAN_MD.read_text(encoding="utf-8"))
+        assert "[正向]" in body or "正向" in body
+        assert "[异常]" in body or "异常" in body
+        assert "[交互]" in body or "交互" in body
+
+    def test_body_tc_annotates_covered_rules(self):
+        body = _read_body(PLAN_MD.read_text(encoding="utf-8"))
+        assert "覆盖规则" in body
+
+    def test_body_tc_not_in_gate(self):
+        """TC 用于 e2e 规划，不进门槛（gate 只校验后端 CT/UT）。"""
+        body = _read_body(PLAN_MD.read_text(encoding="utf-8"))
+        assert "不进门槛" in body or "不进门禁" in body
+
+    def test_body_tc_is_planning_level_summary(self):
+        """plan 只出简版清单，详细步骤/预期由 impact 生成。"""
+        body = _read_body(PLAN_MD.read_text(encoding="utf-8"))
+        assert "简版" in body
+        assert "impact" in body.lower()
+
+
 # ── Body: artifact path (v0.4) ───────────────────────────────────────────────
 
 

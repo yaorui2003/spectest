@@ -33,7 +33,6 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$utf8 = [System.Text.UTF8Encoding]::new($false)
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 $pyScript = @'

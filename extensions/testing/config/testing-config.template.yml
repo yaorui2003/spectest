@@ -18,6 +18,7 @@ gate:
   spec_traceability:
     spec_rule_coverage_min: 100    # @Spec 注解覆盖 Spec 规则的比例（%）
     require_displayname_match: true # 单测 @DisplayName 必须与 @Spec 规则对齐
+  ai_cross_validation: true  # v0.5 新增：是否启用 AI 交叉验证（默认 true）
 
 # 技术栈硬校验配置
 test_stack:
@@ -49,8 +50,9 @@ risk_overrides:
       instruction_coverage_min: 80
       complexity_coverage_min: 60
 
-# 对抗测试阶段配置（v0.4 新增）
+# 对抗测试阶段配置（v0.4 新增；v0.5 critical_path_required 语义改：gate 硬判开关）
 adversarial:
-  enabled: true              # 是否启用对抗测试阶段（默认 true）
-  max_iterations: 3          # 循环上限（默认 3）
-  critical_path_required: true # high 风险规则方法 MUST 至少 1 条对抗用例
+  enabled: true              # implement 4.5 阶段是否启用（AI 行为）
+  max_iterations: 3
+  critical_path_required: true # v0.5 新语义：gate 是否硬判 high 风险规则对抗用例
+                               # true=hard FAIL; false=降级（gate 跳过对抗检查）

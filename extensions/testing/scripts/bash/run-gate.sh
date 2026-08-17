@@ -101,9 +101,17 @@ import run_gate
 args = sys.argv
 def _a(i):
     return args[i] if i < len(args) else ""
-def _json_or_none(i):
-    s = _a(i)
-    return json.loads(s) if s else None
+def _json_or_none(s):
+    import json, os
+    if not s:
+        return None
+    try:
+        if os.path.isfile(s):
+            with open(s, encoding='utf-8') as f:
+                return json.load(f)
+        return json.loads(s)
+    except Exception:
+        return None
 inputs = {
     "source": _a(2),
     "test_source": _a(3),
@@ -115,9 +123,9 @@ inputs = {
     "degraded": _a(9) == "1",
     "mvn_status": _a(10),
     "impact_ok": _a(11) == "1",
-    "scan_stack": _json_or_none(12),
-    "parse_results": _json_or_none(13),
-    "scan_spec": _json_or_none(14),
+    "scan_stack": _json_or_none(_a(12)),
+    "parse_results": _json_or_none(_a(13)),
+    "scan_spec": _json_or_none(_a(14)),
 }
 result = run_gate.run(inputs)
 print(json.dumps(result, ensure_ascii=False, indent=2))

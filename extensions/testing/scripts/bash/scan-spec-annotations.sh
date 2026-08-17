@@ -42,7 +42,7 @@ fi
 SPEC_RULES=$(awk '
     /^[[:space:]]*#/ {
         title = tolower($0)
-        if (title ~ /business[\t _-]rules/) {
+        if (title ~ /business[\t _-]+rules/) {
             in_section = 1
         } else if (in_section) {
             in_section = 0
@@ -101,7 +101,37 @@ if [[ ${#JAVA_FILES[@]} -gt 0 ]]; then
             if (pn > 0) {
                 flush_class_fallback()
             }
-            package = ""; class_name = ""; pn = 0
+            package = ""; class_name = ""; pn = 0; in_block = 0
+        }
+
+        # 注释剥离状态机（方案 4.1）：块注释 /* */（跨行持续）+ 行注释 //。
+        # 产出与原始行同号（FNR 不变）的"有效行"赋给 $0，供下方模式匹配复用。
+        # in_block 在 FNR==1 重置（不跨文件延续）；`next` 跳过整行（块注释中间行）。
+        {
+            line = $0
+            if (in_block) {
+                if (index(line, "*/") > 0) {
+                    in_block = 0
+                    line = substr(line, index(line, "*/") + 2)
+                } else {
+                    next
+                }
+            }
+            if (index(line, "/*") > 0) {
+                idx = index(line, "/*")
+                before = substr(line, 1, idx - 1)
+                rest = substr(line, idx + 2)
+                if (index(rest, "*/") > 0) {
+                    line = before substr(rest, index(rest, "*/") + 2)
+                } else {
+                    in_block = 1
+                    line = before
+                }
+            }
+            if (index(line, "//") > 0) {
+                line = substr(line, 1, index(line, "//") - 1)
+            }
+            $0 = line
         }
 
         # 包名
