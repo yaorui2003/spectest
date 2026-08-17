@@ -388,11 +388,10 @@ append 段）：
 > 模板注入。
 >
 > **降级约定**：所有 RECOMMENDED/OPTIONAL/IF EXISTS 输入缺失均不阻断命令——
-> plan 缺 data-model.md 时边界值按 contracts//规则语义推导并注明；report 缺
-> test-plan.md 时 CT 列标注"未生成测试计划"；implement 缺 test-plan.md 时
-> 按 contracts/+business_rules 生成测试任务；gate 缺 testing-config.yml 时
-> 用内置默认阈值。REQUIRED 输入缺失：impact/plan 报缺并指引先跑哪个命令，
-> gate 的 impact-report 缺失即 FAIL（不降级）。
+> report 缺 test-plan.md 时 CT 列标注"未生成测试计划"；implement 缺
+> test-plan.md 时按 contracts/+business_rules 生成测试任务；gate 缺
+> testing-config.yml 时用内置默认阈值。REQUIRED 输入缺失：impact/plan 报缺
+> 并指引先跑哪个命令，gate 的 impact-report 缺失即 FAIL（不降级）。
 
 ### 3.3 数据流关键约束
 
