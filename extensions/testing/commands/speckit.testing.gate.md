@@ -37,7 +37,7 @@ scripts:
 | 测试代码（单测 + 契约测试，单测带 `@DisplayName` 规则标注） | REQUIRED | `mvn clean test` 执行 + @DisplayName 双向对齐 |
 | `spec.md`（`business_rules` 规则编号清单） | REQUIRED | 规则编号比对（unimplemented_rules / orphan_annotations） |
 | `ImpactReport` 产物（`specs/<feature>/docs/impact-report.md`） | REQUIRED（前置检查，缺失即 FAIL） | 取 `risk_level` 套阈值；after_implement 时由 `speckit.testing.impact` 在本命令前产出 |
-| `testing-config.yml`（阈值与风险覆盖配置） | REQUIRED（未配置时用默认模板值） | 阈值与风险覆盖配置 |
+| `testing-config.yml`（阈值与风险覆盖配置） | REQUIRED（缺失时降级：run_gate 使用与模板默认一致的内置阈值，并在 gate-result.md 标注"配置缺失，按默认阈值判定"） | 阈值与风险覆盖配置 |
 
 ## 技术栈前置要求（REQUIRED）
 

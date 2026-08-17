@@ -24,7 +24,7 @@ description: "Speckit Testing 测试报告：校验门禁已执行，汇总测�
 | `ImpactReport` 产物（`specs/<feature>/docs/impact-report.md`） | REQUIRED（引用，不重复生成） | 呈现 risk_level + affected_rules 摘要 |
 | `spec.md`（`business_rules` 规则编号清单） | REQUIRED | 追溯矩阵规则清单（R1..Rn） |
 | 扫描脚本产出的覆盖矩阵（`@Spec` 注解分布 JSON） | REQUIRED | annotated_rules 代码位置（追溯矩阵来源） |
-| `TestPlan` 产物（`specs/<feature>/docs/test-plan.md`） | REQUIRED | CT-xx 按规则编号反查（追溯矩阵契约测试列） |
+| `TestPlan` 产物（`specs/<feature>/docs/test-plan.md`） | RECOMMENDED（缺失时降级：追溯矩阵契约测试列标注"未生成测试计划"，不阻断报告生成） | CT-xx 按规则编号反查（追溯矩阵契约测试列） |
 
 ## 处理逻辑
 
@@ -79,6 +79,10 @@ description: "Speckit Testing 测试报告：校验门禁已执行，汇总测�
 | @Spec 代码位置 | 扫描脚本 JSON 的 `annotated_rules` |
 | 单测 @DisplayName | 解析单测方法 @DisplayName 中的规则编号 |
 | 契约测试 CT 编号 | 测试计划 TestPlan 的 CT-xx（按规则编号反查） |
+
+> **降级**：`test-plan.md` 缺失（未运行 `speckit.testing.plan`）时，契约
+> 测试列不反查，逐行标注"未生成测试计划"，并追加一行提示建议补跑
+> `speckit.testing.plan` 后重生成报告。
 
 追溯矩阵记入 `TraceabilityMatrix`，每行一条 SpecRule，必须覆盖
 spec.md 全部 business_rules 规则（无 @Spec 的规则对应位置标注

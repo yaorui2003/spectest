@@ -373,9 +373,10 @@ append 段）：
 | | research.md / ImpactReport | OPTIONAL（套风险档阈值） | |
 | `/speckit.testing.gate` | 业务代码 / 测试代码 / spec.md | REQUIRED | gate-result.md（脚本写） |
 | | impact-report.md | REQUIRED（缺失即 FAIL） | |
-| | testing-config.yml | REQUIRED（取阈值） | |
+| | testing-config.yml | REQUIRED（缺失时降级：内置默认阈值并在结果中标注） | |
 | `/speckit.testing.report` | gate-result.md | REQUIRED（缺失/FAIL 拒绝生成） | test-report.md |
-| | impact-report.md（引用不重生成）/ spec.md / @Spec 扫描 JSON / test-plan.md（CT 反查） | REQUIRED | |
+| | impact-report.md（引用不重生成）/ spec.md / @Spec 扫描 JSON | REQUIRED | |
+| | test-plan.md（CT 反查） | RECOMMENDED（缺失降级：契约测试列标注"未生成测试计划"） | |
 | `speckit.implement`（preset append 段） | tasks.md / plan.md / contracts/ / data-model.md | REQUIRED（核心逻辑） | 业务代码 + 测试代码 |
 | | test-plan.md（UT-xx/CT-xx 清单与验收阈值） | IF EXISTS（存在则 MUST 参考） | |
 
@@ -385,6 +386,13 @@ append 段）：
 > 核心 `speckit.tasks` / `speckit.implement` 本身不读 test-plan.md（核心
 > 无 testing 扩展概念），参考行为由 testing-tdd preset 的 replace/append
 > 模板注入。
+>
+> **降级约定**：所有 RECOMMENDED/OPTIONAL/IF EXISTS 输入缺失均不阻断命令——
+> plan 缺 data-model.md 时边界值按 contracts//规则语义推导并注明；report 缺
+> test-plan.md 时 CT 列标注"未生成测试计划"；implement 缺 test-plan.md 时
+> 按 contracts/+business_rules 生成测试任务；gate 缺 testing-config.yml 时
+> 用内置默认阈值。REQUIRED 输入缺失：impact/plan 报缺并指引先跑哪个命令，
+> gate 的 impact-report 缺失即 FAIL（不降级）。
 
 ### 3.3 数据流关键约束
 
