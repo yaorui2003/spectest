@@ -28,8 +28,8 @@ contracts/ / data-model.md / research.md），生成契约测试、单测用例�
 | `spec.md` | REQUIRED | `business_rules`（R1..Rn）+ `api` 段，用例生成依据 |
 | `plan.md` | REQUIRED | speckit.plan 产出的实现计划，含 contracts 路径与技术决策 |
 | `contracts/` | REQUIRED | 接口契约定义（每接口含正向请求与错误码清单），契约测试依据 |
-| `data-model.md` | RECOMMENDED | 数据模型与字段约束，单测边界值与 fixture 依据（缺失时降级：边界值按 `contracts/` 字段约束或 `spec.md` 规则语义推导，并在 TestPlan 中注明"data-model.md 缺失，边界值为推导值"） |
-| `research.md` | OPTIONAL | 调研结论，影响测试策略（缺失时不影响用例生成，策略按默认 TDD 流程走） |
+| `data-model.md` | RECOMMENDED | 数据模型与字段约束，单测边界值与 fixture 依据 |
+| `research.md` | OPTIONAL | 调研结论，影响测试策略 |
 | `ImpactReport` | OPTIONAL | 存在则取 `risk_level` 套风险档阈值；缺失用默认档 |
 
 > 任一 REQUIRED 产物缺失时，本命令**不得臆造**--向用户报缺什么、
@@ -115,9 +115,7 @@ contracts/ / data-model.md / research.md），生成契约测试、单测用例�
 6. **异常路径用 `assertThrows`**：捕获业务异常并断言错误码
    （`assertEquals("INVALID_AMOUNT", thrown.getCode())`）。
 7. **边界值依据 `data-model.md`**：字段约束驱动的边界（如金额 > 0 的
-   边界：0 / 最小单位 / 最大值），不要凭空造边界。**降级**：`data-model.md`
-   缺失时，边界值按 `contracts/` 字段约束或 `spec.md` 规则语义推导（仍不得
-   臆造），并在 TestPlan 边界路径用例旁注明来源为推导值。
+   边界：0 / 最小单位 / 最大值），不要凭空造边界。
 8. **命名 `UT-<序号>`**，每条标注规则编号，与代码侧 `@Spec(rule="Rn")`
    双向对齐。
 

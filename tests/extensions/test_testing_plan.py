@@ -68,14 +68,6 @@ class TestPlanBodySections:
         body = _read_body(PLAN_MD.read_text(encoding="utf-8"))
         assert "spec.md" in body
 
-    def test_body_data_model_missing_fallback(self):
-        """data-model.md 为 RECOMMENDED：缺失时边界值按 contracts//规则语义
-        推导并注明，不阻断用例生成。"""
-        body = _read_body(PLAN_MD.read_text(encoding="utf-8"))
-        assert "data-model.md" in body
-        assert "推导" in body
-        assert "缺失" in body
-
     def test_body_generates_contract_test_cases(self):
         """Step 2: each contract -> contract test cases (1 positive + 1 per
         error code)."""
