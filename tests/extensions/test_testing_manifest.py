@@ -4,13 +4,14 @@
 ``specs/001-speckit-testing-ext/contracts/manifest-schema.md``：
 
 - ``schema_version == "1.0"``
-- ``extension.id == "testing"``、``version == "1.3.0"``（v0.6 minor 升版：前端 e2e 测试规划泛化——plan 前端测试项 TC + impact 功能测试案例集）
+- ``extension.id == "testing"``、``version == "1.4.0"``（v0.6 minor 升版：前端测试支持 + 风险分级规则化 + covered_rules 选择执行）
 - ``requires.speckit_version == ">=0.2.0"``
 - ``hooks`` 为顶层字段（不在 ``provides`` 内）
 - v0.3: ``hooks.before_plan`` 已移除；``hooks.after_implement`` 改为列表形式
   ``[impact, gate]``（impact 在前产出风险、gate 在后消费）
 - ``provides.commands`` 4 个，命名匹配 ``^speckit\\.testing\\.[a-z]+$``
-- ``provides.templates`` 6 个（含 e2e-case-template，命名匹配 ``^[a-z-]+$``）
+- ``provides.templates`` 8 个（含 e2e-case-template + frontend-unit-test-template +
+  frontend-e2e-template，命名匹配 ``^[a-z0-9-]+$``）
 - ``provides.scripts`` 4 个（scan-spec-annotations + validate-spec-format
   + parse-test-results + scan-test-stack）
 """
@@ -45,7 +46,7 @@ def test_schema_version(manifest):
 def test_extension_identity(manifest):
     ext = manifest["extension"]
     assert ext["id"] == "testing"
-    assert ext["version"] == "1.3.0"
+    assert ext["version"] == "1.4.0"
 
 
 def test_requires_speckit_version(manifest):
@@ -99,7 +100,7 @@ def test_provides_commands_count_and_naming(manifest):
 
 def test_provides_templates_count_and_naming(manifest):
     templates = manifest["provides"]["templates"]
-    assert len(templates) == 6
+    assert len(templates) == 8
     for t in templates:
         assert TEMPLATE_NAME_RE.match(t["name"]), (
             f"模板名 {t['name']!r} 不匹配 {TEMPLATE_NAME_RE.pattern}"
@@ -112,6 +113,19 @@ def test_provides_templates_include_e2e_case(manifest):
     names = [t["name"] for t in templates]
     assert "e2e-case-template" in names, (
         "provides.templates 必须声明 e2e-case-template"
+    )
+
+
+def test_provides_templates_include_frontend_templates(manifest):
+    """v0.6: provides.templates 含前端模板（frontend-unit-test-template +
+    frontend-e2e-template，I 前端测试支持 + 9.9 covered_rules 选择执行）。"""
+    templates = manifest["provides"]["templates"]
+    names = [t["name"] for t in templates]
+    assert "frontend-unit-test-template" in names, (
+        "provides.templates 必须声明 frontend-unit-test-template（vitest 单测骨架）"
+    )
+    assert "frontend-e2e-template" in names, (
+        "provides.templates 必须声明 frontend-e2e-template（确定性 e2e，covered_rules 元数据）"
     )
 
 

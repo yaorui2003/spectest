@@ -77,9 +77,19 @@ def _parse_surefire(surefire_dir: Path) -> dict:
     }
 
 
-def _parse_jacoco(jacoco_file: Path) -> dict:
-    """解析 JaCoCo jacoco.xml，返回各类覆盖率百分比。"""
+def _parse_jacoco(jacoco_file: Path) -> tuple[dict, list[dict]]:
+    """解析 JaCoCo jacoco.xml，返回 (聚合覆盖率, class 级覆盖率列表)。
+
+    聚合覆盖率：全量 counter 汇总的各类百分比（整数，现状语义）。
+
+    class 级覆盖率（v0.6 9.4，供 run_gate 覆盖率作用域判定）：
+    按 XML 出现顺序遍历 ``<package name>`` -> ``<class name>``，收集每 class
+    的 LINE/BRANCH/METHOD/INSTRUCTION/COMPLEXITY counter；百分比保留 2 位小数，
+    分母为 0（missed+covered==0）的指标给 ``None``（判定时跳过该指标）。
+    class 全名 = package + "." + class。
+    """
     cov = {key: 0 for key in JACOCO_TYPE_MAP.values()}
+    classes: list[dict] = []
     if jacoco_file.is_file():
         try:
             root = ET.parse(str(jacoco_file)).getroot()
@@ -100,17 +110,47 @@ def _parse_jacoco(jacoco_file: Path) -> dict:
                 cov[JACOCO_TYPE_MAP[t]] = (
                     round(covered / total * 100) if total > 0 else 0
                 )
-    return cov
+            # class 级覆盖率（按 XML 出现顺序）
+            for pkg_el in root.iter("package"):
+                pkg_name = pkg_el.attrib.get("name", "")
+                for cls_el in pkg_el.iter("class"):
+                    cls_name = cls_el.attrib.get("name", "")
+                    entry: dict = {
+                        "name": f"{pkg_name}.{cls_name}" if pkg_name else cls_name,
+                        "package": pkg_name,
+                        "line_coverage": None,
+                        "branch_coverage": None,
+                        "method_coverage": None,
+                        "instruction_coverage": None,
+                        "complexity_coverage": None,
+                    }
+                    cls_sums: dict[str, list[int]] = {}
+                    for c in cls_el.iter("counter"):
+                        t = c.attrib.get("type")
+                        if t in JACOCO_TYPE_MAP:
+                            missed = int(c.attrib.get("missed", 0))
+                            covered = int(c.attrib.get("covered", 0))
+                            s = cls_sums.setdefault(t, [0, 0])
+                            s[0] += missed
+                            s[1] += covered
+                    for t, (missed, covered) in cls_sums.items():
+                        total = missed + covered
+                        entry[JACOCO_TYPE_MAP[t]] = (
+                            round(covered / total * 100, 2) if total > 0 else None
+                        )
+                    classes.append(entry)
+    return cov, classes
 
 
 def parse_results(surefire_dir: Path, jacoco_file: Path) -> dict:
-    """组装测试结果 JSON 对象。"""
+    """组装测试结果 JSON 对象（含 v0.6 9.4 class 级覆盖率）。"""
     tests = _parse_surefire(surefire_dir)
-    cov = _parse_jacoco(jacoco_file)
+    cov, classes = _parse_jacoco(jacoco_file)
     return {
         "unit_tests": tests["unit_tests"],
         "contract_tests": tests["contract_tests"],
         "coverage": cov,
+        "classes": classes,
     }
 
 

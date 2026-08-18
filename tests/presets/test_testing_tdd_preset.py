@@ -21,7 +21,7 @@ def test_preset_manifest_valid():
         m = yaml.safe_load(f)
     assert m["schema_version"] == "1.0"
     assert m["preset"]["id"] == "testing-tdd"
-    assert m["preset"]["version"] == "1.3.0"
+    assert m["preset"]["version"] == "1.4.0"
     assert m["requires"]["speckit_version"] == ">=0.14.4"
 
 
@@ -156,9 +156,9 @@ def test_bundle_references_extension_and_preset():
     preset_ids = {p["id"] for p in b["provides"]["presets"]}
     assert "testing" in ext_ids
     assert "testing-tdd" in preset_ids
-    # v0.6：bundle 版本号与 extension/preset 对齐 1.3.0（v0.6 前端 e2e 规划泛化）
-    assert b["bundle"]["version"] == "1.3.0"
+    # v0.6：bundle 版本号与 extension/preset 对齐 1.4.0（v0.6 完整版落地）
+    assert b["bundle"]["version"] == "1.4.0"
     ext_versions = {e["version"] for e in b["provides"]["extensions"]}
     preset_versions = {p["version"] for p in b["provides"]["presets"]}
-    assert "1.3.0" in ext_versions
-    assert "1.3.0" in preset_versions
+    assert "1.4.0" in ext_versions
+    assert "1.4.0" in preset_versions

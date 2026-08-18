@@ -52,6 +52,8 @@ Java 项目的测试技术栈 MUST 遵守以下约定（testing 扩展门禁 run
 - **禁用**：PowerMock（覆盖率失真，检出即 FAIL）；`@SpringBootTest` 起容器
   （单测用 Mockito、契约测试用 WireMock，均不起容器；并发/集成类测试也用纯
   JUnit + Mockito + Thread/ExecutorService，不起容器）
+- **前端（涉及 .vue/.js/.ts 时）**：组件测试（vitest）REQUIRED；e2e 必须
+  确定性（stub LLM/WS），真实链路 e2e 不进门禁
 
 rationale: 技术栈是门禁覆盖率/通过率指标真实性的前提，禁用项会造成覆盖率失真
 或拖慢执行。本原则是公司测试规范，由 testing 扩展门禁强制（scan_test_stack 检出

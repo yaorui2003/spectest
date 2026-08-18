@@ -6,17 +6,25 @@
   与 scripts/python/scan_spec_annotations.py 输出字节级等价的 JSON
   （spec-kit scripts: frontmatter 三语言等价契约）。
 
-  数据提取用 PowerShell 原生工具（Select-String / Get-Content / -match）；
-  JSON 序列化用 python3 -c 兜底，以复用与 Python 版完全一致的 json.dumps
-  格式（ensure_ascii=False, indent=2, 键顺序固定）。
-
-  若 python3 不可用，回退到 python。
+  v0.6（9.6）：重构为薄壳 —— 全部解析/比对逻辑（含 UNSPEC_CODE 漂移检测）
+  委托给 python 核心 scripts/python/scan_spec_annotations.py，本脚本只做：
+    1. 参数解析与校验（-Source/-Spec/-Json + v0.6 新增 -TestSource/
+       -ExcludePatterns 透传）
+    2. 定位 ..\python\scan_spec_annotations.py
+    3. 原样透传 stdout 与退出码（字节级等价由 python 核心保证）
+  python 不可用时 stderr 报错 exit 3。
 
 .PARAMETER Source
   Java 源文件根目录。
 
 .PARAMETER Spec
   spec.md 文件路径。
+
+.PARAMETER TestSource
+  测试源码根目录（可选，供 UNSPEC_CODE 漂移检测判定"无测试引用"）。
+
+.PARAMETER ExcludePatterns
+  排除模式（逗号分隔，可选，供 UNSPEC_CODE 排除表）。
 
 .PARAMETER Json
   输出 JSON 到 stdout（固定开启）。
@@ -28,6 +36,8 @@
 param(
     [Parameter(Mandatory=$true)][string]$Source,
     [Parameter(Mandatory=$true)][string]$Spec,
+    [string]$TestSource,
+    [string]$ExcludePatterns,
     [switch]$Json
 )
 
@@ -42,208 +52,26 @@ if (-not (Test-Path -LiteralPath $Spec -PathType Leaf)) {
     exit 2
 }
 
-# 强制 UTF-8 读写，确保中文与 Python 版字节级一致
-$utf8 = [System.Text.UTF8Encoding]::new($false)
+# 强制 UTF-8 输出，确保中文与 Python 版字节级一致
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-# ── 1. 提取 spec_rules：解析 spec.md 的 business_rules 章节 ─────────────
-$specLines = [System.IO.File]::ReadAllLines($Spec, $utf8)
-$specRules = [System.Collections.Generic.List[string]]::new()
-$seenRules = @{}
-$inSection = $false
-foreach ($line in $specLines) {
-    if ($line -match '^\s*#') {
-        $title = $line.ToLower()
-        if ($title -match 'business[\t _-]+rules') {
-            $inSection = $true
-        } elseif ($inSection) {
-            $inSection = $false
-        }
-        continue
-    }
-    if (-not $inSection) { continue }
-    if ($line -match '^\s*[-*]?\s*\**?(R\d+)\b') {
-        $rule = $Matches[1]
-        if (-not $seenRules.ContainsKey($rule)) {
-            $seenRules[$rule] = $true
-            $specRules.Add($rule)
-        }
-    }
-}
+$corePath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\python\scan_spec_annotations.py"))
 
-# ── 2. 提取 annotations：遍历 .java 文件（按路径排序） ─────────────────
-$javaFiles = Get-ChildItem -LiteralPath $Source -Recurse -Filter *.java |
-    Sort-Object FullName
-$annotations = [System.Collections.Generic.List[string]]::new()
-foreach ($javaFile in $javaFiles) {
-    $lines = [System.IO.File]::ReadAllLines($javaFile.FullName, $utf8)
-    $package = ""
-    $className = ""
-    $inBlock = $false
-    # pending 列表：每条 @Spec 追加 @($rule, $cap, $desc, $lineNo)，
-    # 支持 @Repeatable 多注解堆叠（Bug #6：单标量会被后一条覆盖）。
-    $pending = [System.Collections.Generic.List[object]]::new()
-    for ($i = 0; $i -lt $lines.Count; $i++) {
-        $line = $lines[$i]
-        $lineNo = $i + 1
-        # 注释剥离状态机（方案 4.1）：块注释 /* */（跨行持续）+ 行注释 //。
-        # 只改变 $line 内容、不改 $lineNo —— 行号映射保持原始行号。
-        # $inBlock 在每文件开头重置（不跨文件延续）；continue 跳过整行（块注释中间行）。
-        if ($inBlock) {
-            $closeIdx = $line.IndexOf("*/")
-            if ($closeIdx -ge 0) {
-                $inBlock = $false
-                $line = $line.Substring($closeIdx + 2)
-            } else {
-                continue
-            }
-        }
-        $openIdx = $line.IndexOf("/*")
-        if ($openIdx -ge 0) {
-            $before = $line.Substring(0, $openIdx)
-            $rest = $line.Substring($openIdx + 2)
-            $closeInRest = $rest.IndexOf("*/")
-            if ($closeInRest -ge 0) {
-                $line = $before + $rest.Substring($closeInRest + 2)
-            } else {
-                $inBlock = $true
-                $line = $before
-            }
-        }
-        $slashIdx = $line.IndexOf("//")
-        if ($slashIdx -ge 0) {
-            $line = $line.Substring(0, $slashIdx)
-        }
-        # 包名
-        if ($package -eq "" -and $line -match '^\s*package\s+([\w.]+)\s*;') {
-            $package = $Matches[1]
-        }
-        # 类名
-        if ($className -eq "" -and $line -match '\b(?:class|interface|enum|record)\s+(\w+)') {
-            $className = $Matches[1]
-        }
-        # @Spec 注解（支持 @Repeatable 多注解堆叠：逐条追加到 pending 列表）
-        if ($line -match '@Spec\s*\(\s*capability\s*=\s*"([^"]+)"\s*,\s*rule\s*=\s*"(R\d+)"(?:\s*,\s*description\s*=\s*"([^"]*)")?\s*\)') {
-            $rule = $Matches[2]
-            $cap = $Matches[1]
-            $desc = $(if ($Matches[3]) { $Matches[3] } else { "" })
-            # 同一行方法签名（如 @Spec(...) public void foo()）：
-            # 立即刷出（含先前 pending），不入 pending，与 Python 逐条解析一致
-            if ($line -match '(public|protected|private)' -and $line -match '\(') {
-                $s = $line
-                if ($s -match '(public|protected|private)') {
-                    $s = $s.Substring($s.IndexOf($Matches[0]))
-                }
-                $s = $s -replace '\(.*', ''
-                if ($s -match '([A-Za-z_][A-Za-z0-9_]*)\s*$') {
-                    $method = $Matches[1]
-                    if ($s -match '\s$') { $method = $method.Trim() }
-                    foreach ($p in $pending) {
-                        if ($package -ne "") {
-                            $loc = "$package.$className.$method`:$($p[3])"
-                        } else {
-                            $loc = "$className.$method`:$($p[3])"
-                        }
-                        $annotations.Add("$($p[0])`t$($p[1])`t$($p[2])`t$loc")
-                    }
-                    $pending.Clear()
-                    if ($package -ne "") {
-                        $loc = "$package.$className.$method`:$lineNo"
-                    } else {
-                        $loc = "$className.$method`:$lineNo"
-                    }
-                    $annotations.Add("$rule`t$cap`t$desc`t$loc")
-                    continue
-                }
-            }
-            $pending.Add(@($rule, $cap, $desc, $lineNo))
-            continue
-        }
-        # pending 时查找方法签名（跳过其他注解行），一次性刷出全部 pending
-        if ($pending.Count -gt 0 -and $line -notmatch '^\s*@') {
-            if ($line -match '(public|protected|private)' -and $line -match '\(') {
-                $s = $line -replace '\(.*', ''
-                if ($s -match '([A-Za-z_][A-Za-z0-9_]*)\s*$') {
-                    $method = $Matches[1]
-                    if ($s -match '\s$') { $method = $method.Trim() }
-                    foreach ($p in $pending) {
-                        if ($package -ne "") {
-                            $loc = "$package.$className.$method`:$($p[3])"
-                        } else {
-                            $loc = "$className.$method`:$($p[3])"
-                        }
-                        $annotations.Add("$($p[0])`t$($p[1])`t$($p[2])`t$loc")
-                    }
-                    $pending.Clear()
-                }
-            }
-        }
-    }
-    # 文件末尾残留 pending（类级 @Spec 未遇方法签名）：用类名兜底刷出（与 Python 一致）
-    foreach ($p in $pending) {
-        if ($package -ne "") {
-            $loc = "$package.$className.$className`:$($p[3])"
-        } else {
-            $loc = "$className.$className`:$($p[3])"
-        }
-        $annotations.Add("$($p[0])`t$($p[1])`t$($p[2])`t$loc")
-    }
-    $pending.Clear()
-}
-
-# ── 3. JSON 序列化：python3 兜底，与 Python 版字节级等价 ─────────────
-$tsv = ($specRules -join "`n") + "`n===`n" + ($annotations -join "`n")
-
-$pyScript = @'
-import json, sys
-data = sys.stdin.read().split("\n")
-spec_rules = []
-annotations = []
-mode = "rules"
-for line in data:
-    if line == "===":
-        mode = "annotations"
-        continue
-    if line == "":
-        continue
-    if mode == "rules":
-        spec_rules.append(line)
-    else:
-        parts = line.split("\t")
-        if len(parts) == 4:
-            annotations.append({"rule": parts[0], "capability": parts[1], "description": parts[2], "location": parts[3]})
-annotated_rules = {}
-for ann in annotations:
-    annotated_rules.setdefault(ann["rule"], []).append(ann["location"])
-spec_set = set(spec_rules)
-annotated_set = set(annotated_rules.keys())
-unimplemented = [r for r in spec_rules if r not in annotated_set]
-orphan = [ann for ann in annotations if ann["rule"] not in spec_set]
-if spec_rules:
-    covered = sum(1 for r in spec_rules if r in annotated_set)
-    coverage = round(covered / len(spec_rules) * 100)
-else:
-    coverage = 0
-result = {
-    "spec_rules": spec_rules,
-    "annotations": annotations,
-    "annotated_rules": annotated_rules,
-    "unimplemented_rules": unimplemented,
-    "orphan_annotations": orphan,
-    "coverage_percent": coverage,
-}
-print(json.dumps(result, ensure_ascii=False, indent=2))
-'@
-
-# 选择可用的 python 解释器
 $pyExe = $null
 foreach ($candidate in @("python3", "python")) {
     $cmd = Get-Command $candidate -ErrorAction SilentlyContinue
     if ($cmd) { $pyExe = $candidate; break }
 }
 if (-not $pyExe) {
-    [Console]::Error.WriteLine("错误: 未找到 python3/python，无法序列化 JSON")
+    [Console]::Error.WriteLine("错误: 未找到 python3/python，无法执行 @Spec 扫描核心")
     exit 3
 }
 
-$tsv | & $pyExe -c $pyScript
+# ── 委托 python 核心：原样透传 stdout（--json 恒追加，输出固定为 JSON） ──
+$pyArgs = @("--source", $Source, "--spec", $Spec)
+if ($TestSource) { $pyArgs += @("--test-source", $TestSource) }
+if ($ExcludePatterns) { $pyArgs += @("--exclude-patterns", $ExcludePatterns) }
+$pyArgs += "--json"
+
+& $pyExe $corePath @pyArgs
+exit $LASTEXITCODE

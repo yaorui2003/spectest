@@ -4,9 +4,15 @@
 解析 ``.java`` 源文件提取 ``@Spec`` 注解，并解析 ``spec.md`` 的
 ``business_rules`` 规则编号，输出 JSON 供 ``speckit.testing.gate`` 命令消费。
 
+v0.6（9.6 节）新增 **UNSPEC_CODE 漂移检测**（T1 结构性 MEDIUM 告警，不阻断
+PASS/FAIL 判定）：比对"生产类清单 vs @Spec 标注"，对（非排除、未标注 @Spec、
+未被测试引用）的业务类输出 ``unspec_codes`` 告警列表。
+
 用法::
 
     python scan_spec_annotations.py --source <java_dir> --spec <spec.md> --json
+    python scan_spec_annotations.py --source <java_dir> --spec <spec.md> \
+        --test-source <test_dir> --exclude-patterns "legacy,*Helper" --json
 
 输出 JSON schema 见
 ``specs/001-speckit-testing-ext/contracts/spec-annotation.md`` 的"扫描契约"段。
@@ -50,6 +56,12 @@ RULE_LINE_RE = re.compile(r"^\s*[-*]?\s*\**?(R\d+)\b")
 
 # 查找方法名的最大向后扫描行数
 _METHOD_SCAN_WINDOW = 20
+
+# 默认排除：包名含这些段 或 类名匹配这些后缀的类不参与漂移告警
+DEFAULT_UNSPEC_EXCLUDE_PACKAGES = (
+    "dto", "vo", "entity", "config", "exception", "util", "helper",
+)
+DEFAULT_UNSPEC_EXCLUDE_CLASS_SUFFIXES = ("Mapper", "Config", "Factory", "Constants")
 
 
 def parse_spec_rules(spec_path: Path) -> list[str]:
@@ -130,8 +142,27 @@ def _strip_comments(lines: list[str]) -> list[str]:
     return stripped
 
 
-def parse_java_file(java_path: Path) -> list[dict]:
-    """解析单个 .java 文件，提取 @Spec 注解（含 location）。
+def _extract_class_identity(stripped: list[str]) -> tuple[str, str]:
+    """从注释剥离后的有效行中提取 (包名, 类名)，分别复用 PACKAGE_RE / CLASS_RE。"""
+    package = ""
+    for line in stripped:
+        m = PACKAGE_RE.match(line)
+        if m:
+            package = m.group(1)
+            break
+
+    class_name = ""
+    for line in stripped:
+        m = CLASS_RE.search(line)
+        if m:
+            class_name = m.group(1)
+            break
+
+    return package, class_name
+
+
+def _parse_java_file_full(java_path: Path) -> tuple[list[dict], str, str]:
+    """解析单个 .java 文件：返回 (annotations, package, class_name)。
 
     先对整个文件做注释剥离（方案 4.1）生成有效行列表，包名/类名/@Spec/方法名
     查找全部基于有效行；但 location 的 ``:i + 1`` 仍指向原始文件行号。
@@ -140,21 +171,7 @@ def parse_java_file(java_path: Path) -> list[dict]:
     lines = text.splitlines()
     stripped = _strip_comments(lines)
 
-    # 提取包名
-    package = ""
-    for line in stripped:
-        m = PACKAGE_RE.match(line)
-        if m:
-            package = m.group(1)
-            break
-
-    # 提取类名
-    class_name = ""
-    for line in stripped:
-        m = CLASS_RE.search(line)
-        if m:
-            class_name = m.group(1)
-            break
+    package, class_name = _extract_class_identity(stripped)
 
     annotations: list[dict] = []
     for i, line in enumerate(stripped):
@@ -173,17 +190,113 @@ def parse_java_file(java_path: Path) -> list[dict]:
                 "description": description,
                 "location": location,
             })
+    return annotations, package, class_name
+
+
+def parse_java_file(java_path: Path) -> list[dict]:
+    """解析单个 .java 文件，提取 @Spec 注解（含 location）。兼容薄封装。"""
+    annotations, _, _ = _parse_java_file_full(java_path)
     return annotations
 
 
-def scan(source_dir: Path, spec_path: Path) -> dict:
-    """扫描源码目录与 spec.md，组装扫描契约 JSON 对象。"""
+def _collect_test_texts(test_source_dir: Path | None) -> list[str]:
+    """收集测试源码目录下所有 .java 文件全文（用于测试引用判定）。
+
+    不传 ``test_source_dir`` 时视为无测试引用。遍历顺序与 source 目录一致
+    （``sorted(rglob("*.java"))``）。
+    """
+    if test_source_dir is None:
+        return []
+    texts: list[str] = []
+    for java_file in sorted(test_source_dir.rglob("*.java")):
+        texts.append(java_file.read_text(encoding="utf-8"))
+    return texts
+
+
+def _is_referenced_by_tests(class_name: str, test_texts: list[str]) -> bool:
+    """判定业务类是否被测试引用：测试文本中存在 ``\\b<class_name>\\b`` 完整词。"""
+    if not test_texts:
+        return False
+    pattern = re.compile(rf"\b{re.escape(class_name)}\b")
+    return any(pattern.search(text) for text in test_texts)
+
+
+def _build_extra_excludes(exclude_patterns: str) -> tuple[list[str], list[re.Pattern]]:
+    """解析逗号分隔的额外排除模式，返回 (额外包段列表, 额外类名正则列表)。
+
+    模式同时覆盖包段/类名后缀两种语义：不含通配符的段按包段匹配
+    （package 任一段 == 该段）；含 ``*`` 的模式把 ``*`` 展开为 ``.*`` 后
+    转成正则 fullmatch 类名（即类名后缀匹配，如 ``*Mapper`` -> ``.*Mapper``）。
+    """
+    pkg_segments: list[str] = []
+    class_regexes: list[re.Pattern] = []
+    for raw in exclude_patterns.split(","):
+        pattern = raw.strip()
+        if not pattern:
+            continue
+        if "*" in pattern:
+            regex_src = "^" + re.escape(pattern).replace(r"\*", ".*") + "$"
+            class_regexes.append(re.compile(regex_src))
+        else:
+            pkg_segments.append(pattern)
+    return pkg_segments, class_regexes
+
+
+def _is_unspec_excluded(
+    package: str,
+    class_name: str,
+    extra_pkg_segments: list[str],
+    extra_class_regexes: list[re.Pattern],
+) -> bool:
+    """判定 (package, class_name) 是否命中漂移排除表。
+
+    命中即排除：内置包段（package 任一段 in DEFAULT_UNSPEC_EXCLUDE_PACKAGES）、
+    内置类名后缀（endswith DEFAULT_UNSPEC_EXCLUDE_CLASS_SUFFIXES）、
+    以及额外模式（不含 ``*`` 按包段、含 ``*`` 按类名正则）。
+    """
+    if any(seg in DEFAULT_UNSPEC_EXCLUDE_PACKAGES for seg in package.split(".")):
+        return True
+    if any(class_name.endswith(suffix) for suffix in DEFAULT_UNSPEC_EXCLUDE_CLASS_SUFFIXES):
+        return True
+    if any(seg in extra_pkg_segments for seg in package.split(".")):
+        return True
+    if any(rx.fullmatch(class_name) for rx in extra_class_regexes):
+        return True
+    return False
+
+
+def scan(
+    source_dir: Path,
+    spec_path: Path,
+    test_source_dir: Path | None = None,
+    exclude_patterns: str = "",
+) -> dict:
+    """扫描源码目录与 spec.md，组装扫描契约 JSON 对象。
+
+    ``test_source_dir`` 可选（新增）：被测试引用的生产类不参与 UNSPEC_CODE
+    漂移告警；不传视为无测试引用。
+
+    ``exclude_patterns`` 可选（新增）：逗号分隔的额外排除模式，来自 run_gate
+    透传的 config ``scan.unspec_exclude_patterns``；不含 ``*`` 的段按包段匹配，
+    含 ``*`` 的模式转成正则匹配类名后缀。
+
+    ``unspec_codes`` 为 MEDIUM 结构性告警，不参与 PASS/FAIL 判定。
+    """
     spec_rules = parse_spec_rules(spec_path)
 
     annotations: list[dict] = []
+    # 生产类清单（保持文件遍历顺序）：{package, class_name, annotated}
+    class_infos: list[dict] = []
     # 按 Path 字符串排序，保证三语言一致的文件遍历顺序
     for java_file in sorted(source_dir.rglob("*.java")):
-        annotations.extend(parse_java_file(java_file))
+        file_annotations, package, class_name = _parse_java_file_full(java_file)
+        annotations.extend(file_annotations)
+        if class_name:
+            class_infos.append({
+                "package": package,
+                "class_name": class_name,
+                "annotated": bool(file_annotations),  # 文件级有任意 @Spec 即已标注
+            })
 
     # annotated_rules：规则 -> 位置清单（按 annotations 出现顺序构建）
     annotated_rules: dict[str, list[str]] = {}
@@ -206,6 +319,23 @@ def scan(source_dir: Path, spec_path: Path) -> dict:
     else:
         coverage_percent = 0
 
+    # UNSPEC_CODE 漂移检测（9.6，T1 结构性 MEDIUM，不阻断判定）：
+    # 非排除、未标注 @Spec、且未被测试引用的业务类 -> 完整类名告警列表
+    extra_pkg_segments, extra_class_regexes = _build_extra_excludes(exclude_patterns)
+    test_texts = _collect_test_texts(test_source_dir)
+    unspec_codes: list[str] = []
+    for info in class_infos:
+        package, class_name, annotated = (
+            info["package"], info["class_name"], info["annotated"],
+        )
+        if annotated:
+            continue
+        if _is_unspec_excluded(package, class_name, extra_pkg_segments, extra_class_regexes):
+            continue
+        if _is_referenced_by_tests(class_name, test_texts):
+            continue
+        unspec_codes.append(f"{package}.{class_name}" if package else class_name)
+
     return {
         "spec_rules": spec_rules,
         "annotations": annotations,
@@ -213,6 +343,7 @@ def scan(source_dir: Path, spec_path: Path) -> dict:
         "unimplemented_rules": unimplemented_rules,
         "orphan_annotations": orphan_annotations,
         "coverage_percent": coverage_percent,
+        "unspec_codes": unspec_codes,
     }
 
 
@@ -223,9 +354,25 @@ def main() -> int:
     parser.add_argument("--source", required=True, help="Java 源文件根目录")
     parser.add_argument("--spec", required=True, help="spec.md 文件路径")
     parser.add_argument("--json", action="store_true", help="输出 JSON 到 stdout")
+    parser.add_argument(
+        "--test-source",
+        help="测试源码根目录（可选）：被测试引用的生产类不参与 UNSPEC_CODE 漂移告警",
+    )
+    parser.add_argument(
+        "--exclude-patterns",
+        default="",
+        help="额外排除模式（逗号分隔，可选）：不含 * 的段按包段匹配，含 * 的"
+             "模式转成正则匹配类名后缀；UNSPEC_CODE 漂移告警为 MEDIUM，不阻断"
+             "PASS/FAIL 判定",
+    )
     args = parser.parse_args()
 
-    result = scan(Path(args.source), Path(args.spec))
+    result = scan(
+        Path(args.source),
+        Path(args.spec),
+        Path(args.test_source) if args.test_source else None,
+        args.exclude_patterns,
+    )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 

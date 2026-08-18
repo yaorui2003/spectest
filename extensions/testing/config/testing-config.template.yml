@@ -19,11 +19,24 @@ gate:
     spec_rule_coverage_min: 100    # @Spec 注解覆盖 Spec 规则的比例（%）
     require_displayname_match: true # 单测 @DisplayName 必须与 @Spec 规则对齐
   ai_cross_validation: true  # v0.5 新增：是否启用 AI 交叉验证（默认 true）
+  coverage_scope: auto       # v0.6 新增：覆盖率判定作用域 auto | <pkg,...> | all
+                             #   auto=git diff 推导；<pkg,...>=显式顶层包列表；
+                             #   all=全量阈值（退化为现状语义）。run_gate --coverage-scope 可覆盖
+  baseline_file: ""          # v0.6 新增：非空启用 baseline 增量判定（作用域内类覆盖率快照，
+                             #   只查增量退化、绝对值不判；与 coverage_scope=all 互斥）
+
 
 # 技术栈硬校验配置
 test_stack:
   forbid_powermock: true           # 禁用 PowerMock（覆盖率失真）
   forbid_springboottest: true      # 禁用 @SpringBootTest 起容器（契约测试用 WireMock）
+
+# UNSPEC_CODE 漂移告警排除模式（v0.6 新增，9.6）
+# 追加到内置排除表（dto/vo/entity/config/exception/util/helper 包段、
+# *Mapper/*Config/*Factory/*Constants 类名后缀）之外的额外排除模式，逗号分隔；
+# 不含 * 的段按包段匹配，含 * 的模式匹配类名后缀（如 "*Legacy"）。
+scan:
+  unspec_exclude_patterns: []      # 例：["legacy", "*Helper"]
 
 # 风险分级阈值覆盖（impact 标注风险等级后，gate 按风险套用）
 # 三档单调递减：high > medium > low

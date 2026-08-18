@@ -3,8 +3,8 @@ schema_version: "1.0"
 extension:
   id: testing
   name: Speckit Testing
-  version: 1.3.0
-  description: "Spec 驱动测试先行验证，含 @Spec 注解追溯与自动门禁（技术栈必需前置 + 脚本化 + 硬校验），并含前端 e2e 测试规划（TC 用例 + 功能测试案例集）"
+  version: 1.4.0
+  description: "Spec 驱动测试先行验证，含 @Spec 注解追溯与自动门禁（技术栈必需前置 + 脚本化 + 硬校验），并含前端测试支持（单测骨架 + 确定性 e2e + 用例选择执行）"
   author: speckit-core
   repository: https://github.com/yaorui2003/spectest
   license: MIT
@@ -52,6 +52,12 @@ provides:
     - name: spec-trace-matrix-template
       file: templates/spec-trace-matrix.md
       description: "Spec 追溯矩阵模板"
+    - name: frontend-unit-test-template
+      file: templates/frontend-unit-test.template.ts
+      description: "前端单测模板（vitest + @vue/test-utils + happy-dom，describe 对齐规则编号）"
+    - name: frontend-e2e-template
+      file: templates/frontend-e2e.template.spec.js
+      description: "前端确定性 e2e 模板（Playwright，route stub LLM/WS + covered_rules 元数据）"
 
   scripts:
     - name: scan-spec-annotations

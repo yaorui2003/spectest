@@ -154,6 +154,86 @@ class TestImpactE2ECaseSet:
         assert "┌" not in body, "v0.6: 功能测试案例集应弃用 ASCII 框线表格"
 
 
+# ── Body: risk tiering rules (v0.6 9.7) ──────────────────────────────────────
+
+
+class TestImpactRiskTieringRules:
+    """v0.6 9.7: 风险分级规则化（替代 AI 自由裁量，判定可复现、可测试）。
+
+    命中方式评分（直接命中->high / 间接命中->medium / 边缘->low）+ 提升规则
+    （Mapper/SQL/Flyway、pom/package.json、application*.yml 各升一级，high
+    封顶）+ 输出固定三档。
+    """
+
+    def test_body_has_ruleized_scoring(self):
+        """风险分级必须是规则化评分（非自由裁量）。"""
+        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
+        assert "规则化" in body, "v0.6 9.7: 风险分级必须规则化（替代自由裁量）"
+        assert "评分" in body
+
+    def test_body_has_three_hit_types(self):
+        """命中方式三档：直接命中 / 间接命中 / 边缘。"""
+        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
+        assert "直接命中" in body
+        assert "间接命中" in body
+        assert "边缘" in body
+
+    def test_body_maps_hit_types_to_risk_levels(self):
+        """直接命中->high / 间接命中->medium / 边缘->low 的映射必须出现。"""
+        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
+        # 三档风险词 + 命中方式词同段出现（表格：| 直接命中 | `high` | ...）
+        for marker in ["直接命中", "间接命中", "边缘", "high", "medium", "low"]:
+            assert marker in body, f"风险分级规则缺关键词: {marker}"
+
+    def test_body_has_boost_rules(self):
+        """提升规则：*Mapper.java / *.sql / Flyway / pom.xml / package.json /
+        application*.yml 各升一级。"""
+        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
+        assert "提升规则" in body
+        for marker in [
+            "*Mapper.java",
+            "*.sql",
+            "Flyway",
+            "pom.xml",
+            "package.json",
+            "application*.yml",
+            "升一级",
+        ]:
+            assert marker in body, f"提升规则缺关键词: {marker}"
+
+    def test_body_high_capped_and_fixed_three_tiers(self):
+        """high 封顶 + 输出固定三档，与 gate 步骤 5.5 对抗硬判对接。"""
+        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
+        assert "封顶" in body, "v0.6 9.7: 提升规则必须声明 high 封顶"
+        assert "固定三档" in body, "v0.6 9.7: 输出必须固定三档 high/medium/low"
+
+
+# ── Body: functional case set covered_rules (v0.6 9.9) ───────────────────────
+
+
+class TestImpactCaseSetCoveredRules:
+    """v0.6 9.9: functional case set 的关联规则字段即 covered_rules，供 gate
+    步骤 1 e2e 用例选择执行求交消费。"""
+
+    def test_body_declares_covered_rules_field(self):
+        """步骤 5.2 必须声明关联规则字段即 covered_rules。"""
+        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
+        assert "covered_rules" in body
+        assert "关联规则" in body
+
+    def test_body_covered_rules_consumed_by_gate(self):
+        """covered_rules 必须说明供 gate 求交 + e2e 选择执行消费（9.9）。"""
+        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
+        assert "求交" in body, "covered_rules 必须说明与受影响规则求交"
+        assert "选择执行" in body, "covered_rules 必须说明 e2e 用例选择执行"
+
+    def test_body_covered_rules_must_per_case(self):
+        """契约不变量：每条 TC MUST 携带 covered_rules，缺失降级手工。"""
+        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
+        assert "MUST 携带" in body, "契约不变量必须要求每条 TC 携带 covered_rules"
+        assert "降级手工" in body or "自动降级" in body
+
+
 # ── Body: artifact path (v0.4) ───────────────────────────────────────────────
 
 

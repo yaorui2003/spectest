@@ -68,15 +68,26 @@ ALL_RULES = ["R1", "R2", "R3", "R4", "R5", "R6", "R7"]
 # ── 脚本执行辅助 ──────────────────────────────────────────────────────────
 
 
-def _run_py(source_dir: Path, spec_path: Path) -> str:
-    """调用 Python 扫描脚本，返回原始 stdout 字符串。"""
-    result = subprocess.run(
-        [sys.executable, str(PY_SCRIPT),
-         "--source", str(source_dir),
-         "--spec", str(spec_path),
-         "--json"],
-        capture_output=True, text=True, timeout=30,
-    )
+def _run_py(
+    source_dir: Path,
+    spec_path: Path,
+    test_source: Path | None = None,
+    exclude_patterns: str = "",
+) -> str:
+    """调用 Python 扫描脚本，返回原始 stdout 字符串。
+
+    ``test_source`` / ``exclude_patterns`` 为 v0.6（9.6）UNSPEC_CODE 漂移
+    检测的可选参数：测试引用判定 + 追加排除模式，缺省时与旧调用等价。
+    """
+    cmd = [sys.executable, str(PY_SCRIPT),
+           "--source", str(source_dir),
+           "--spec", str(spec_path)]
+    if test_source is not None:
+        cmd += ["--test-source", str(test_source)]
+    if exclude_patterns:
+        cmd += ["--exclude-patterns", exclude_patterns]
+    cmd += ["--json"]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, (
         f"Python 扫描脚本退出码 {result.returncode}\n"
         f"stdout: {result.stdout}\nstderr: {result.stderr}"
@@ -84,15 +95,22 @@ def _run_py(source_dir: Path, spec_path: Path) -> str:
     return result.stdout
 
 
-def _run_sh(source_dir: Path, spec_path: Path) -> str:
+def _run_sh(
+    source_dir: Path,
+    spec_path: Path,
+    test_source: Path | None = None,
+    exclude_patterns: str = "",
+) -> str:
     """调用 bash 扫描脚本，返回原始 stdout 字符串。"""
-    result = subprocess.run(
-        ["bash", str(SH_SCRIPT),
-         "--source", str(source_dir),
-         "--spec", str(spec_path),
-         "--json"],
-        capture_output=True, text=True, timeout=30,
-    )
+    cmd = ["bash", str(SH_SCRIPT),
+           "--source", str(source_dir),
+           "--spec", str(spec_path)]
+    if test_source is not None:
+        cmd += ["--test-source", str(test_source)]
+    if exclude_patterns:
+        cmd += ["--exclude-patterns", exclude_patterns]
+    cmd += ["--json"]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, (
         f"bash 扫描脚本退出码 {result.returncode}\n"
         f"stdout: {result.stdout}\nstderr: {result.stderr}"
@@ -100,15 +118,22 @@ def _run_sh(source_dir: Path, spec_path: Path) -> str:
     return result.stdout
 
 
-def _run_ps(source_dir: Path, spec_path: Path) -> str:
+def _run_ps(
+    source_dir: Path,
+    spec_path: Path,
+    test_source: Path | None = None,
+    exclude_patterns: str = "",
+) -> str:
     """调用 PowerShell 扫描脚本，返回原始 stdout 字符串。"""
-    result = subprocess.run(
-        ["pwsh", "-NoProfile", "-File", str(PS_SCRIPT),
-         "-Source", str(source_dir),
-         "-Spec", str(spec_path),
-         "-Json"],
-        capture_output=True, text=True, timeout=30,
-    )
+    cmd = ["pwsh", "-NoProfile", "-File", str(PS_SCRIPT),
+           "-Source", str(source_dir),
+           "-Spec", str(spec_path)]
+    if test_source is not None:
+        cmd += ["-TestSource", str(test_source)]
+    if exclude_patterns:
+        cmd += ["-ExcludePatterns", exclude_patterns]
+    cmd += ["-Json"]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, (
         f"ps1 扫描脚本退出码 {result.returncode}\n"
         f"stdout: {result.stdout}\nstderr: {result.stderr}"
@@ -297,12 +322,14 @@ def test_parity_single_file_full(tmp_path: Path):
     sh_out = _run_sh(src_dir, spec_path)
     _assert_parity(py_out, sh_out, "单文件全覆盖", "bash")
 
-    # 同时验证输出内容正确（覆盖率 100%，无遗漏/孤儿）
+    # 同时验证输出内容正确（覆盖率 100%，无遗漏/孤儿/漂移）
     data = json.loads(py_out)
     assert data["coverage_percent"] == 100
     assert data["unimplemented_rules"] == []
     assert data["orphan_annotations"] == []
     assert len(data["annotations"]) == 7
+    # 9.6：全类已 @Spec 标注 -> 无 UNSPEC_CODE 漂移
+    assert data["unspec_codes"] == []
 
 
 @pytest.mark.skipif(not HAS_PWSH, reason="pwsh 不可用")
@@ -411,6 +438,8 @@ def test_parity_empty_dir(tmp_path: Path):
     assert data["unimplemented_rules"] == ALL_RULES
     assert data["orphan_annotations"] == []
     assert data["coverage_percent"] == 0
+    # 9.6：无任何类 -> 无 UNSPEC_CODE 漂移
+    assert data["unspec_codes"] == []
 
 
 @pytest.mark.skipif(not HAS_PWSH, reason="pwsh 不可用")
@@ -764,6 +793,238 @@ def test_parity_multi_space_header_ps(tmp_path: Path):
     py_out = _run_py(src_dir, spec_path)
     ps_out = _run_ps(src_dir, spec_path)
     _assert_parity(py_out, ps_out, "多分隔符标题", "pwsh")
+
+
+# ── 用例 (h): UNSPEC_CODE 漂移检测（9.6，T1 结构性 MEDIUM） ───────────────
+
+
+def _make_unspec_business_java() -> str:
+    """生成无 @Spec 的业务类 PaymentService.java（应进入 unspec_codes 告警）。"""
+    return """\
+package com.example;
+
+public class PaymentService {
+
+    public void pay() {
+    }
+}
+"""
+
+
+def _make_unspec_spec_java() -> str:
+    """生成含 @Spec 的 TransferService.java（已标注 -> 不告警）。"""
+    return """\
+package com.example;
+
+import com.speckit.testing.Spec;
+
+public class TransferService {
+
+    @Spec(capability = "transfer", rule = "R1", description = "金额校验")
+    public void transfer() {
+    }
+}
+"""
+
+
+def _make_unspec_mapper_java() -> str:
+    """生成 *Mapper 后缀类 OrderMapper.java（内置类名后缀排除 -> 不告警）。"""
+    return """\
+package com.example;
+
+public class OrderMapper {
+}
+"""
+
+
+def _make_unspec_dto_java() -> str:
+    """生成 dto 包段类 OrderDto.java（内置包段排除 -> 不告警）。"""
+    return """\
+package com.example.dto;
+
+public class OrderDto {
+}
+"""
+
+
+def _make_unspec_entity_java() -> str:
+    """生成 entity 包段类 User.java（内置包段排除 -> 不告警）。"""
+    return """\
+package com.example.entity;
+
+public class User {
+}
+"""
+
+
+def _make_unspec_refund_java() -> str:
+    """生成无 @Spec 的 RefundService.java（被测试引用 -> 传 --test-source 不告警）。"""
+    return """\
+package com.example;
+
+public class RefundService {
+
+    public void refund() {
+    }
+}
+"""
+
+
+def _make_unspec_legacy_java() -> str:
+    """生成 legacy 包段业务类 FeeService.java（--exclude-patterns 追加排除 -> 不告警）。"""
+    return """\
+package com.example.legacy;
+
+public class FeeService {
+
+    public void charge() {
+    }
+}
+"""
+
+
+def _make_unspec_refund_test_java() -> str:
+    """生成引用 RefundService 的 RefundServiceTest.java（测试引用判定）。"""
+    return """\
+package com.example;
+
+import org.junit.jupiter.api.Test;
+
+class RefundServiceTest {
+
+    @Test
+    void shouldRefund() {
+        RefundService service = new RefundService();
+        service.refund();
+    }
+}
+"""
+
+
+def _make_unspec_fixture(tmp_path: Path) -> tuple[Path, Path]:
+    """创建 UNSPEC_CODE 漂移 fixture：业务类/DTO/实体/Mapper/@Spec 类混合目录。
+
+    返回 (src_dir, spec_path)。判定预期（9.6 三类）：
+    - PaymentService（业务类，无 @Spec 无测试引用）-> unspec_codes 告警
+    - dto/entity 包段类（OrderDto/User）+ *Mapper 后缀类（OrderMapper）
+      -> 内置排除表不告警
+    - TransferService（@Spec 标注）-> 不告警
+    """
+    spec_path = tmp_path / "spec.md"
+    spec_path.write_text(SPEC_MD, encoding="utf-8")
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "PaymentService.java").write_text(
+        _make_unspec_business_java(), encoding="utf-8"
+    )
+    (src_dir / "TransferService.java").write_text(
+        _make_unspec_spec_java(), encoding="utf-8"
+    )
+    (src_dir / "OrderMapper.java").write_text(
+        _make_unspec_mapper_java(), encoding="utf-8"
+    )
+    dto_dir = src_dir / "dto"
+    dto_dir.mkdir()
+    (dto_dir / "OrderDto.java").write_text(_make_unspec_dto_java(), encoding="utf-8")
+    entity_dir = src_dir / "entity"
+    entity_dir.mkdir()
+    (entity_dir / "User.java").write_text(_make_unspec_entity_java(), encoding="utf-8")
+    return src_dir, spec_path
+
+
+def _make_unspec_exclude_fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """创建 UNSPEC_CODE 排除/测试引用 fixture。
+
+    返回 (src_dir, test_src_dir, spec_path)。判定预期（9.6 可选加分）：
+    - RefundService（业务类，无 @Spec）-> 被 RefundServiceTest 引用，
+      传 --test-source 后不告警
+    - legacy/FeeService（业务类，无 @Spec）-> 传 --exclude-patterns "legacy"
+      追加排除后不告警
+    """
+    spec_path = tmp_path / "spec.md"
+    spec_path.write_text(SPEC_MD, encoding="utf-8")
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "RefundService.java").write_text(
+        _make_unspec_refund_java(), encoding="utf-8"
+    )
+    legacy_dir = src_dir / "legacy"
+    legacy_dir.mkdir()
+    (legacy_dir / "FeeService.java").write_text(
+        _make_unspec_legacy_java(), encoding="utf-8"
+    )
+    test_dir = tmp_path / "test-src"
+    test_dir.mkdir()
+    (test_dir / "RefundServiceTest.java").write_text(
+        _make_unspec_refund_test_java(), encoding="utf-8"
+    )
+    return src_dir, test_dir, spec_path
+
+
+@requires_bash
+@pytest.mark.skipif(not SH_SCRIPT.exists(), reason="bash 扫描脚本尚未实现")
+def test_parity_unspec_codes_sh(tmp_path: Path):
+    """UNSPEC_CODE 漂移：Python 与 bash 字节级一致 + 三类判定正确（9.6）。
+
+    场景：业务类无 @Spec 且无测试引用（PaymentService）-> 告警完整类名
+    com.example.PaymentService；DTO 类（dto 包段 OrderDto / entity 包段
+    User / *Mapper 后缀 OrderMapper）-> 内置排除表不告警；@Spec 类
+    （TransferService）-> 不告警。
+    """
+    src_dir, spec_path = _make_unspec_fixture(tmp_path)
+
+    py_out = _run_py(src_dir, spec_path)
+    sh_out = _run_sh(src_dir, spec_path)
+    _assert_parity(py_out, sh_out, "UNSPEC_CODE 漂移", "bash")
+
+    # 内容断言：仅 PaymentService 告警（完整类名），其余类全部排除
+    data = json.loads(py_out)
+    assert data["unspec_codes"] == ["com.example.PaymentService"]
+    warned = {code.rsplit(".", 1)[-1] for code in data["unspec_codes"]}
+    assert warned == {"PaymentService"}
+    for cls in ("TransferService", "OrderMapper", "OrderDto", "User"):
+        assert cls not in warned, f"{cls} 不应出现在 unspec_codes: {data['unspec_codes']}"
+
+
+@pytest.mark.skipif(not HAS_PWSH, reason="pwsh 不可用")
+@pytest.mark.skipif(not PS_SCRIPT.exists(), reason="ps1 扫描脚本尚未实现")
+def test_parity_unspec_codes_ps(tmp_path: Path):
+    """UNSPEC_CODE 漂移：Python 与 PowerShell 字节级一致（9.6）。"""
+    src_dir, spec_path = _make_unspec_fixture(tmp_path)
+
+    py_out = _run_py(src_dir, spec_path)
+    ps_out = _run_ps(src_dir, spec_path)
+    _assert_parity(py_out, ps_out, "UNSPEC_CODE 漂移", "pwsh")
+
+
+@requires_bash
+@pytest.mark.skipif(not SH_SCRIPT.exists(), reason="bash 扫描脚本尚未实现")
+def test_parity_unspec_exclusions_sh(tmp_path: Path):
+    """UNSPEC_CODE 排除：--test-source 引用 + --exclude-patterns 追加生效（9.6）。
+
+    场景：RefundService 被 RefundServiceTest 引用（传 --test-source 不告警）；
+    legacy/FeeService 命中 --exclude-patterns "legacy"（追加排除不告警）。
+    预期无漂移（unspec_codes == []），Python 与 bash 字节级一致。
+    """
+    src_dir, test_dir, spec_path = _make_unspec_exclude_fixture(tmp_path)
+
+    py_out = _run_py(src_dir, spec_path, test_source=test_dir, exclude_patterns="legacy")
+    sh_out = _run_sh(src_dir, spec_path, test_source=test_dir, exclude_patterns="legacy")
+    _assert_parity(py_out, sh_out, "UNSPEC_CODE 排除", "bash")
+
+    data = json.loads(py_out)
+    assert data["unspec_codes"] == []
+
+
+@pytest.mark.skipif(not HAS_PWSH, reason="pwsh 不可用")
+@pytest.mark.skipif(not PS_SCRIPT.exists(), reason="ps1 扫描脚本尚未实现")
+def test_parity_unspec_exclusions_ps(tmp_path: Path):
+    """UNSPEC_CODE 排除：Python 与 PowerShell 字节级一致（9.6）。"""
+    src_dir, test_dir, spec_path = _make_unspec_exclude_fixture(tmp_path)
+
+    py_out = _run_py(src_dir, spec_path, test_source=test_dir, exclude_patterns="legacy")
+    ps_out = _run_ps(src_dir, spec_path, test_source=test_dir, exclude_patterns="legacy")
+    _assert_parity(py_out, ps_out, "UNSPEC_CODE 排除", "pwsh")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1316,7 +1577,7 @@ def test_parity_run_gate_sh(tmp_path: Path):
     # gate-result.md 由脚本写出（py 与 sh 都写同一路径，内容一致）
     md = (fx["docs_dir"] / "gate-result.md").read_text(encoding="utf-8")
     assert "## Gate Result: PASS" in md
-    assert "降级模式（无 Java 环境）" in md
+    assert "降级模式（无 java/mvn 或项目无 pom.xml 且无候选模块）" in md
 
 
 @pytest.mark.skipif(not HAS_PWSH, reason="pwsh 不可用")

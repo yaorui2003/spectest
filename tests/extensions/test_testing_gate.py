@@ -318,3 +318,85 @@ class TestGateV05Config:
     def test_config_adversarial_enabled_comment(self):
         text = self.CONFIG_PATH.read_text(encoding="utf-8")
         assert "enabled" in text
+
+
+# ── v0.6: 步骤 1 模块定位（9.2）+ 第 5 维直接测试覆盖（8.4）──────────────────
+
+
+class TestGateV06ModuleLocate:
+    """v0.6 9.2: 步骤 1 多模块定位——`--project` 指向含 pom.xml 的模块目录，
+    find 探测，避免多模块根目录无 pom 误降级。"""
+
+    def test_body_has_project_flag_instruction(self):
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "--project" in body, "gate 步骤 1 必须说明 --project 指向模块目录"
+        assert "pom.xml" in body
+
+    def test_body_has_find_probe_instruction(self):
+        """不确定模块位置时用 find 探测 pom.xml。"""
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "find . -name pom.xml" in body, "缺少 find . -name pom.xml 探测指令"
+
+    def test_body_mentions_module_auto_locate(self):
+        """run_gate 模块自动定位（_locate_module 递归探测）。"""
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "_locate_module" in body, "缺少 _locate_module 模块自动定位说明"
+
+
+class TestGateV06FifthDimension:
+    """v0.6 8.4: AI 交叉验证第 5 维——直接测试覆盖（每条规则至少一个直接单测）。"""
+
+    def test_body_has_fifth_dimension(self):
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "直接测试覆盖" in body, "交叉验证必须含第 5 维直接测试覆盖（8.4）"
+
+    def test_body_fifth_dimension_direct_unit_test_rule(self):
+        """第 5 维语义：每条规则至少一个直接单测，仅间接覆盖 -> WARN。"""
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "直接单测" in body
+        assert "WARN" in body, "仅间接覆盖时应 WARN 建议补直接单测"
+
+    def test_body_fifth_dimension_in_dimension_table(self):
+        """第 5 维必须与四维同处交叉验证维度表中。"""
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        for marker in ["规则-测试语义对齐", "断言质量", "覆盖率真实性", "@Spec 放置", "直接测试覆盖"]:
+            assert marker in body, f"交叉验证维度表缺: {marker}"
+
+
+# ── v0.6: 漂移处置决策矩阵（9.8）─────────────────────────────────────────────
+
+
+class TestGateV06DriftDecisionMatrix:
+    """v0.6 9.8: gate FAIL 后归因与处置——铁律 + 归因三问 + 决策矩阵
+    （AI 在 SOFT 段给建议归因，不自动改判）。"""
+
+    def test_body_has_iron_rule(self):
+        """铁律：永远不允许直接改 test 适配 code。"""
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "铁律" in body
+        assert "改 test 适配 code" in body, "铁律必须显式禁止改 test 适配 code"
+
+    def test_body_has_attribution_three_questions(self):
+        """归因三问：差异定位 / 谁主张谁复核 / 改 spec/code/test 哪个。"""
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "归因三问" in body
+        assert "差异在哪个文件" in body, "归因一问：差异在哪个文件/行/字段"
+        assert "谁主张谁复核" in body, "归因二问：谁主张谁复核"
+        assert "改 spec/code/test" in body, "归因三问：改 spec/code/test 哪个"
+
+    def test_body_has_decision_matrix_table(self):
+        """决策矩阵四行：code 不满足 spec / test 漏场景 / spec 有歧义 / code 多于 spec。"""
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "决策矩阵" in body
+        for row in ["code 不满足 spec", "test 漏场景", "spec 有歧义", "code 多于 spec"]:
+            assert row in body, f"决策矩阵缺漂移类型行: {row}"
+
+    def test_body_decision_matrix_test_fix_driven_by_spec(self):
+        """test 漏场景行：补测试由 spec 派生逻辑驱动，非适配 code。"""
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "由 spec 派生逻辑驱动" in body, "补测试必须由 spec 派生逻辑驱动"
+
+    def test_body_drift_framework_does_not_override(self):
+        """漂移处置框架在 SOFT 段给建议归因，不自动改判 HARD 判定。"""
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "不自动改判" in body, "决策矩阵不得自动改判（SOFT 层）"

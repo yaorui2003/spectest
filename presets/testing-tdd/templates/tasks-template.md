@@ -44,8 +44,9 @@ description: "Task list template for feature implementation (testing-tdd preset:
 
   TDD IS MANDATORY (testing-tdd preset): for every implementation task, a test
   task MUST be generated first and ordered BEFORE the implementation task.
-  Skeletons (Phase 2) MUST be created first so tests compile (Red = assertion
-  failure, not compile failure).
+  Skeletons (Phase 2) MUST be created first and MUST pass `mvn test-compile`
+  (EXIT=0, 测试骨架存在时) before any test task -- TDD's Red = assertion
+  failure per the 3 conditions (see each test zone below), NOT compile failure.
   DO NOT keep these sample tasks in the generated tasks.md file.
 
   双标签说明：每个任务带 [USx] 与 [Rn] 两个标签——
@@ -93,9 +94,9 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] T011 [P] Create data model skeletons in src/main/java/{{package}}/model/ (entities, enums, value objects — fields only, no logic)
 - [ ] T012 [P] Create enum skeletons for error codes / status codes (from spec.md Error Code Definitions)
 - [ ] T013 [P] Create Service skeletons in src/main/java/{{package}}/service/ (empty method bodies throwing UnsupportedOperationException)
-- [ ] T014 Run `mvn compile` checkpoint -- skeletons MUST compile (no test code yet, just compile main sources)
+- [ ] T014 Run `mvn test-compile` checkpoint -- skeletons MUST compile WITH test skeletons present (EXIT=0; compiles main + test sources so test signatures match skeleton interfaces)
 
-**Checkpoint**: Foundation + skeletons ready -- `mvn compile` passes, user story implementation can now begin in parallel
+**Checkpoint**: Foundation + skeletons ready -- `mvn test-compile` passes (EXIT=0, 测试骨架存在时), user story implementation can now begin in parallel
 
 ---
 
@@ -109,6 +110,15 @@ Examples of foundational tasks (adjust based on your project):
 
 > **MANDATORY: Write these tests FIRST, ensure they FAIL (Red) before ANY implementation task (Green).** Do not skip this subsection.
 > 测试任务数量与内容以 test-plan.md 用例清单为准（存在时）：单测按 UT-xx（每规则至少 3 条），契约测试按 CT-xx（每错误码 1 条）；下方为样板，生成时按实际用例展开。
+
+> **Red evidence -- ALL 3 MUST hold（Red 判定三条件，命令级硬规则）**：
+> ① `mvn test-compile` EXIT=0（骨架接口与测试签名一致）；
+> ② `mvn test -Dtest=<XxxTest>` 输出含断言失败特征（`Failures: N>0` 或
+>    `AssertionFailedError` / `expected: ... but was: ...`）；
+> ③ 编译错误（COMPILATION ERROR / cannot find symbol）**不是 Red**——骨架未
+>    完成，回补骨架后再验 ①+②。
+> **禁止**：用 `mvn compile`（仅 main）或 `mvn test-compile` 通过汇报 Red；
+> 禁止在编译失败时陈述"断言失败"（编译失败时断言未运行）。
 
 - [ ] T015 [P] [US1] [R1] Unit test per test-plan.md UT-xx for [user journey] in src/test/java/{{package}}/unit/[Service]Test.java (JUnit5 + Mockito, @DisplayName("R<n>-<描述>"))
 - [ ] T016 [P] [US1] [R1] Contract test per test-plan.md CT-xx for [endpoint] in src/test/java/{{package}}/contract/[Contract]ContractTest.java (WireMock, @DisplayName("R<n>-<描述>"))
@@ -139,6 +149,15 @@ Examples of foundational tasks (adjust based on your project):
 > **MANDATORY: Write these tests FIRST, ensure they FAIL (Red) before implementation.**
 > 按 test-plan.md UT-xx / CT-xx 用例清单生成，缺失时按 contracts/ + rules 推导。
 
+> **Red evidence -- ALL 3 MUST hold（Red 判定三条件，命令级硬规则）**：
+> ① `mvn test-compile` EXIT=0（骨架接口与测试签名一致）；
+> ② `mvn test -Dtest=<XxxTest>` 输出含断言失败特征（`Failures: N>0` 或
+>    `AssertionFailedError` / `expected: ... but was: ...`）；
+> ③ 编译错误（COMPILATION ERROR / cannot find symbol）**不是 Red**——骨架未
+>    完成，回补骨架后再验 ①+②。
+> **禁止**：用 `mvn compile`（仅 main）或 `mvn test-compile` 通过汇报 Red；
+> 禁止在编译失败时陈述"断言失败"（编译失败时断言未运行）。
+
 - [ ] T023 [P] [US2] [R2] Unit test per test-plan.md UT-xx for [user journey] in src/test/java/{{package}}/unit/[Service]Test.java (JUnit5 + Mockito, @DisplayName("R<n>-<描述>"))
 - [ ] T024 [P] [US2] [R2] Contract test per test-plan.md CT-xx for [endpoint] in src/test/java/{{package}}/contract/[Contract]ContractTest.java (WireMock, @DisplayName("R<n>-<描述>"))
 
@@ -166,6 +185,15 @@ Examples of foundational tasks (adjust based on your project):
 > **MANDATORY: Write these tests FIRST, ensure they FAIL (Red) before implementation.**
 > 按 test-plan.md UT-xx / CT-xx 用例清单生成，缺失时按 contracts/ + rules 推导。
 
+> **Red evidence -- ALL 3 MUST hold（Red 判定三条件，命令级硬规则）**：
+> ① `mvn test-compile` EXIT=0（骨架接口与测试签名一致）；
+> ② `mvn test -Dtest=<XxxTest>` 输出含断言失败特征（`Failures: N>0` 或
+>    `AssertionFailedError` / `expected: ... but was: ...`）；
+> ③ 编译错误（COMPILATION ERROR / cannot find symbol）**不是 Red**——骨架未
+>    完成，回补骨架后再验 ①+②。
+> **禁止**：用 `mvn compile`（仅 main）或 `mvn test-compile` 通过汇报 Red；
+> 禁止在编译失败时陈述"断言失败"（编译失败时断言未运行）。
+
 - [ ] T029 [P] [US3] [R3] Unit test per test-plan.md UT-xx for [user journey] in src/test/java/{{package}}/unit/[Service]Test.java (JUnit5 + Mockito, @DisplayName("R<n>-<描述>"))
 - [ ] T030 [P] [US3] [R3] Contract test per test-plan.md CT-xx for [endpoint] in src/test/java/{{package}}/contract/[Contract]ContractTest.java (WireMock, @DisplayName("R<n>-<描述>"))
 
@@ -182,6 +210,29 @@ Examples of foundational tasks (adjust based on your project):
 ---
 
 [Add more user story phases as needed, following the same pattern: Tests (REQUIRED, first) -> Implementation (after)]
+
+---
+
+## Phase N: Frontend Tasks（前端任务区 -- 本 feature 涉及前端 .vue/.js/.ts 时 MUST）
+
+**Purpose**: Frontend changes MUST ship with tests too（前端改动时测试任务 REQUIRED，双标签 [USx] [Rn] 保留）
+
+### Tests for Frontend (REQUIRED - TDD) ⚠️
+
+> 组件测试用 **vitest**（+ @vue/test-utils + happy-dom，`describe("R<n>-<描述>")`
+> 对齐 spec.md 规则编号——@Spec 仅限 Java，前端用命名规范对齐）。
+> e2e MUST **确定性**（stub LLM / WS 固定事件序列，禁真实 LLM）；真实链路
+> e2e 仅手工/定时慢跑，**不进门禁**。
+
+- [ ] TXXX [P] [USx] [Rn] Component test for [Component].vue in frontend/src/.../__tests__/[Component].spec.js (vitest, describe("R<n>-<描述>"))
+- [ ] TXXX [P] [USx] [Rn] Unit test for [api].js (WS 连接/断连/降级) in frontend/src/.../__tests__/[api].spec.js (vitest)
+- [ ] TXXX [USx] [Rn] Deterministic e2e for [e2e case id] in frontend/e2e/[Name].spec.js (stub LLM + fixed WS events, covered_rules: R<n>)
+
+### Implementation for Frontend
+
+> These tasks MUST come AFTER the frontend test tasks above (Red-Green order).
+
+- [ ] TXXX [P] [USx] [Rn] Implement [Component].vue / [api].js in frontend/src/...
 
 ---
 
@@ -203,7 +254,7 @@ Examples of foundational tasks (adjust based on your project):
 ### Phase Dependencies
 
 - **Setup (Phase 1)**: No dependencies - can start immediately
-- **Foundational (Phase 2)**: Depends on Setup completion - BLOCKS all user stories (includes skeletons T010-T014 which MUST compile before any test tasks)
+- **Foundational (Phase 2)**: Depends on Setup completion - BLOCKS all user stories (includes skeletons T010-T014 which MUST pass `mvn test-compile` (EXIT=0) before any test tasks)
 - **User Stories (Phase 3+)**: All depend on Foundational phase completion
   - User stories can then proceed in parallel (if staffed)
   - Or sequentially in priority order (P1 -> P2 -> P3)
@@ -217,7 +268,7 @@ Examples of foundational tasks (adjust based on your project):
 
 ### Within Each User Story (TDD - MANDATORY)
 
-- Skeletons (Phase 2) MUST compile before any test tasks (TDD's Red = assertion failure, not compile failure)
+- Skeletons (Phase 2) MUST pass `mvn test-compile` (EXIT=0) before any test tasks (TDD's Red = assertion failure per the 3 conditions, not compile failure)
 - Unit tests MUST be written and confirmed to FAIL before implementation (Red phase)
 - Unit test tasks MUST be ordered before contract test tasks (单测先行)
 - Contract test tasks MUST be ordered before implementation tasks
@@ -290,7 +341,7 @@ With multiple developers:
 - [Story] label maps task to specific user story for traceability
 - Each user story should be independently completable and testable
 - **Tests are REQUIRED (testing-tdd preset): 单测先行 -- verify unit tests FAIL before contract tests, contract tests before implementation**
-- **Skeletons (Phase 2) MUST compile before test tasks -- TDD's Red = assertion failure, not compile failure**
+- **Skeletons (Phase 2) MUST pass `mvn test-compile`（EXIT=0）before any test task -- TDD's Red = Red 判定三条件（断言失败特征），编译错误不是 Red**
 - Commit after each task or logical group
 - Stop at any checkpoint to validate story independently
 - Avoid: vague tasks, same file conflicts, cross-story dependencies that break independence

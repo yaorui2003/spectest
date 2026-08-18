@@ -38,8 +38,8 @@ public Result someMethod(...) { ... }
 | 产物 | 参考模板 | 约定要点（MUST 遵守） |
 |------|----------|----------------------|
 | Java Service 业务代码 | `java-service-template` | @Spec 注解格式（capability + rule + description） |
-| JUnit5 单测 | `java-unit-test-template` | @DisplayName("R<n>-<描述>") 格式、given/when/then 三段式、断言业务语义（禁弱断言） |
-| 契约测试 | `contract-test-template` | WireMock stub + **HTTP 客户端调用被测接口**（RestTemplate/WebClient）+ **断言响应码**（assertEquals(expectedStatus, response.getStatusCode())）+ **断言响应体**（业务字段）+ 每接口 1 正向 + 每错误码 1 反向。**禁 `assertTrue(true)` 空断言** |
+| JUnit5 单测 | `java-unit-test-template` | @DisplayName("R<n>-<描述>") 格式、given/when/then 三段式、断言业务语义（禁弱断言：禁 `assertTrue(result.contains("1"))` 式橡皮断言）；新测试用 STRICT（Mockito strict stubs），存量 LENIENT 用例标注原因 |
+| 契约测试 | `contract-test-template` | WireMock stub + **HTTP 客户端调用被测接口**（RestTemplate/WebClient）+ **断言响应码**（assertEquals(expectedStatus, response.getStatusCode())）+ **断言响应体**（业务字段）+ 每接口 1 正向 + 每错误码 1 反向。**禁 `assertTrue(true)` 空断言**；契约测试断言的事件类型 MUST 在 spec.md 或 contracts 中定义（禁对不存在事件类型的永真断言） |
 
 > **注意**：模板提供的是**约定载体**（注解格式、命名规则、断言风格），而非项目特定的
 > 技术栈骨架。AI 应参考约定生成符合项目实际技术栈的代码，而非机械复制模板中的
@@ -50,6 +50,10 @@ public Result someMethod(...) { ... }
 
 - 单测 `@DisplayName` MUST 标注规则编号：`@DisplayName("R1-<描述>")`
 - 与代码侧 `@Spec(rule="R1")` 双向对齐
+- **直接测试覆盖（8.1 约定）**：每条业务规则（spec.md Business Rules 行）
+  MUST 有至少 1 个**直接单测**——测试类直接实例化/驱动实现该规则的主类；
+  **禁止仅以编排类间接覆盖替代**（如核心生成链 agent 只被
+  OrchestratorImplTest 间接触碰）
 
 ### 4. 技术栈约定（MUST）
 
@@ -79,7 +83,25 @@ public Result someMethod(...) { ... }
 
 > **单测先行前提**：骨架先行（tasks-template Phase 2 的 T010-T014 骨架任务）
 > 保证单测可编译（TDD 的 Red = 断言失败而非编译失败）。
->
+
+#### 5.1 Red 判定三条件（命令级硬规则）
+
+**Red 证据 = 同时满足**：
+
+1. `mvn test-compile` **EXIT=0**（骨架接口与测试签名一致）；
+2. 运行 `mvn test -Dtest=<XxxTest>` 且输出含 **断言失败特征**（`Failures: N>0`
+   或 `AssertionFailedError` / `expected: ... but was: ...`）；
+3. **编译错误（COMPILATION ERROR / cannot find symbol）不是 Red**——是骨架
+   未完成，回补骨架后再验 1+2。
+
+**禁止**：用 `mvn compile`（仅 main）或 `mvn test-compile` 通过汇报 Red；
+禁止在编译失败时陈述"断言失败"（编译失败时断言未运行）。
+
+**测试编译失败 -> 回补骨架（Phase 2 骨架任务），不得进入 Green**——先对齐
+骨架接口与测试签名，再验 Red 三条件。
+
+- **插桩日志（System.out/logger 调试输出）验收前删除**（对账后移除）
+
 > 违反上述任一规则，`after_implement` 钩子触发的 `speckit.testing.gate` 会判定
 > FAIL 并阻断提交，输出具体修复建议。
 
@@ -108,6 +130,9 @@ public 方法，**MUST 至少有 1 条对抗用例**。此约束独立于 gate �
   `adversarial.critical_path_required` 控制——`true`（默认）时 high 风险规则
   0 对抗用例 -> gate FAIL（阻断）；`false` 时降级为 advisory（gate 跳过对抗
   硬判，仅统计不阻断）
+- **禁止直接改 test 适配 code**（漂移处置铁律，见 speckit.testing.gate 步骤 3
+  决策矩阵）：gate 判定与测试结果不符时，先归因（改 spec/code/test 哪个、
+  为什么），绝不通过放宽断言/删断言/改测试适配代码来让 gate 通过
 
 #### 6.3 渐进式轮次（max_iterations 上限）
 
@@ -124,16 +149,26 @@ public 方法，**MUST 至少有 1 条对抗用例**。此约束独立于 gate �
 - 未达标且未超 max_iterations -> 下一轮
 - 超限仍未达标 -> **如实进 gate**，gate 会 FAIL（不伪造数据，直击 P0 #1）
 
-### 7. 前端 e2e 测试规划（预留，不写 e2e 代码）
+### 7. 前端测试约定（改动 .vue/.js/.ts 时 MUST）
 
-> 本扩展**不要求**编写或执行前端 e2e 测试代码——e2e 不做 TDD、不进门槛
-> （gate 只校验后端单测/契约测试）。但后端行为 MUST 为后续 e2e 测试留好
-> 依据：
+> 前端改动（.vue/.js/.ts）时测试任务 **REQUIRED**（tasks-template 前端任务
+> 区，双标签 [USx] [Rn] 保留）。gate 只校验后端单测/契约测试，前端侧靠以下
+> 约定自律：
 
+- **组件/API 测试**：改动 .vue/.js 必有对应组件测试（**vitest** +
+  @vue/test-utils + happy-dom），`describe("R<n>-<描述>")` 对齐 spec.md 规则
+  编号（@Spec 仅限 Java，前端用命名规范对齐）；api 层（WS 连接/断连/降级）
+  同样必测
+- **e2e MUST 确定性**：stub LLM（route stub 返回固定 JSON，或后端起 stub
+  模式 + `@MockBean` LLMService）+ WS 事件固定序列注入，**禁真实 LLM**；
+  真实链路 e2e 仅手工/定时慢跑，**不进门禁**
+- **e2e 选择执行**（避免全量慢跑）：只跑 impact functional case set 中
+  covered_rules 与受影响规则求交命中的用例：
+  `npx playwright test --grep <命中用例 ID>`（如 `--grep E2E-01,E2E-03`）
 - 实现完成后，`after_implement` 钩子触发的 `speckit.testing.impact` 会生成
-  **功能测试案例集**（TC-xx，写入 `specs/<feature>/docs/impact-report.md`），
-  供前端 e2e 测试 AI（如 Playwright）编写 e2e 脚本——实现时无需为此写任何
-  e2e 代码
+  **功能测试案例集**（TC-xx / e2e 用例带 covered_rules，写入
+  `specs/<feature>/docs/impact-report.md`），供前端 e2e 编写与选择执行——
+  实现时无需为此写 e2e 代码
 - 后端错误码 / 校验行为 / 返回文案 MUST 与前端提示文案约定一致（功能测试
   案例集中的预期结果以后端实际行为为准）
 - 接口响应 MUST 包含前端展示所需字段（如交易流水号、脱敏账号、剩余余额），

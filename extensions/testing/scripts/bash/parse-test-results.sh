@@ -59,6 +59,7 @@ if os.path.isdir(surefire_dir):
 unit_pass_rate = round(unit_passed / unit_total * 100) if unit_total > 0 else 0
 contract_pass_rate = round(contract_passed / contract_total * 100) if contract_total > 0 else 0
 cov = {"LINE": 0, "BRANCH": 0, "METHOD": 0, "INSTRUCTION": 0, "COMPLEXITY": 0}
+classes = []
 if os.path.isfile(jacoco_file):
     try:
         root = ET.parse(jacoco_file).getroot()
@@ -77,6 +78,33 @@ if os.path.isfile(jacoco_file):
         for t, (missed, covered) in sums.items():
             total = missed + covered
             cov[t] = round(covered / total * 100) if total > 0 else 0
+        type_key = {"LINE": "line_coverage", "BRANCH": "branch_coverage", "METHOD": "method_coverage", "INSTRUCTION": "instruction_coverage", "COMPLEXITY": "complexity_coverage"}
+        for pkg_el in root.iter("package"):
+            pkg_name = pkg_el.attrib.get("name", "")
+            for cls_el in pkg_el.iter("class"):
+                cls_name = cls_el.attrib.get("name", "")
+                entry = {
+                    "name": (pkg_name + "." + cls_name) if pkg_name else cls_name,
+                    "package": pkg_name,
+                    "line_coverage": None,
+                    "branch_coverage": None,
+                    "method_coverage": None,
+                    "instruction_coverage": None,
+                    "complexity_coverage": None,
+                }
+                cls_sums = {}
+                for c in cls_el.iter("counter"):
+                    t = c.attrib.get("type")
+                    if t in ("LINE", "BRANCH", "METHOD", "INSTRUCTION", "COMPLEXITY"):
+                        missed = int(c.attrib.get("missed", 0))
+                        covered = int(c.attrib.get("covered", 0))
+                        s = cls_sums.setdefault(t, [0, 0])
+                        s[0] += missed
+                        s[1] += covered
+                for t, (missed, covered) in cls_sums.items():
+                    total = missed + covered
+                    entry[type_key[t]] = round(covered / total * 100, 2) if total > 0 else None
+                classes.append(entry)
 result = {
     "unit_tests": {"total": unit_total, "passed": unit_passed, "failed": unit_failed, "pass_rate": unit_pass_rate},
     "contract_tests": {"total": contract_total, "passed": contract_passed, "failed": contract_failed, "pass_rate": contract_pass_rate},
@@ -87,6 +115,7 @@ result = {
         "instruction_coverage": cov["INSTRUCTION"],
         "complexity_coverage": cov["COMPLEXITY"],
     },
+    "classes": classes,
 }
 print(json.dumps(result, ensure_ascii=False, indent=2))
 PY
