@@ -60,9 +60,9 @@ scripts:
 > **不降级原则**：`mvn clean test` 执行后若 `target/surefire-reports/` 或
 > `target/site/jacoco/jacoco.xml` 缺失，判定 **FAIL**（通过率/覆盖率指标
 > 不可用 = 未达标），由脚本输出修复建议（添加 Surefire/JaCoCo 插件配置，
-> 参考下方"JaCoCo/Surefire 配置参考"）。唯一降级场景（v0.6 语义，与脚本
+> 参考下方"JaCoCo/Surefire 配置参考"）。唯一降级场景（beta 简化，与脚本
 > 对齐）= **无 `java`/`mvn` 可执行**，**或** `--project` 指向目录无
-> `pom.xml` 且无候选 Maven 模块，见下方"降级模式"。
+> `pom.xml`（AI 定位错误），见下方"降级模式"。
 
 ## T1/T2 双门禁框架（v0.6 8.0，认知框架，不改脚本判定逻辑）
 
@@ -102,39 +102,44 @@ scripts:
 sh|ps|py` 选择其一），脚本内部按以下 10 步执行（供 AI 理解脚本行为，AI
 **不要**自行重复执行）：
 
-**前置检查（MUST，v0.6）**：
+**前置检查（MUST，beta 简化）**：
 
-- **多模块项目 MUST 用 `--project` 指向含 `pom.xml` 的模块目录**（如
-  `backend/`）；不确定先 `find . -name pom.xml -maxdepth 3` 探测，把
-  `--project` 指向实际模块目录，避免多模块根目录无 pom 触发降级。
-- **模块自动定位（v0.6 9.2）**：run_gate 现支持模块自动定位——`--project`
-  指向目录无 pom.xml 时，脚本以 `_locate_module` 递归探测深度 <= 2 的子
-  模块 pom.xml：唯一候选 -> WARN + 输出建议命令（**不自动切换执行目录**，
-  防误判）；多候选 -> FAIL 提示显式 `--project`；无候选 -> 维持降级（真非
-  Java 项目）。CI 场景可加 `--auto-locate`（默认 false）让唯一候选自动采用。
-- **覆盖率作用域（v0.6 9.4）**：`--coverage-scope auto|<pkg,...>|all`
-  控制覆盖率阈值作用域（`auto` = git diff 推导改动顶层包并集，默认）。
-  原则**"作用域管阈值，不管执行"**——全量 `mvn clean test` 永远跑（回归
-  盲区兜底），阈值只对作用域内类强制，作用域外类只报告不 FAIL。可选
-  `--baseline <file>` 存作用域内覆盖率快照，之后只查增量退化（与 `all`
-  互斥）。参数细节见 `run_gate --help`。
+- **多模块项目 MUST 先 `find . -name pom.xml -maxdepth 3`**（或已知工程
+  结构）将 `--project` 指向**含 pom.xml 的模块目录**（如 `backend/`），再
+  运行 run_gate；**run_gate 不做模块自动探测**（POM 定位由 AI 负责），
+  `--project` 传错（目录无 pom.xml）即降级并提示。
+- **diff coverage（替换 v0.6 9.4 作用域，beta 简化）**：
+  `--diff-threshold <pct>`（默认 80，`config gate.diff_coverage_threshold`
+  可写）阈值只对 **git diff 变更行**强制——"只看 MR 变更行覆盖率"；
+  `--diff-base <branch>` 用于 MR 场景（merge-base 对比），默认工作区 vs
+  HEAD。**全量 `mvn clean test` 永远跑**（回归盲区兜底），diff coverage
+  只做阈值判定不限制执行；无 git 仓库时回退全量聚合阈值判定；无 Java
+  变更时该维度跳过（不 FAIL）。
 - **受影响 e2e 用例清单（可选，v0.6 9.9）**：impact 命中规则与功能测试
   案例集的 `covered_rules` 字段**求交**，得到本次回归受影响的 e2e 用例 ID
   清单；前端 e2e 选择执行 `npx playwright test --grep <用例 ID>` 只跑命中
   用例（不命中即不跑，避免全量慢跑；缺 covered_rules 的用例降级手工）。
   清单随步骤 3 SOFT 段追加到 gate-result.md 的 e2e 段（不改写 HARD 段）。
 
+最终参数清单（beta 简化）：
+
+```bash
+run_gate --source <java_dir> --test-source <test_dir> --spec <spec.md> \
+  --project <模块目录> --feature-dir <specs/<feature>> --config <testing-config.yml> \
+  [--check-only] [--diff-threshold <pct>] [--diff-base <branch>] --json
+```
+
 | 步骤 | 动作 | 失败处理 |
 |---|---|---|
 | 0 | 检查 `specs/<feature>/docs/impact-report.md` 存在 | 不存在 -> FAIL（impact 未执行，请先运行 speckit.testing.impact） |
-| 1 | 模块定位（无 pom 时 `_locate_module` 递归探测）+ `mvn clean test`（强制 clean，杜绝 target 残留污染） | 失败 -> FAIL；无 java/mvn -> 降级模式；无 pom 唯一候选 -> WARN+建议命令（不自动切换）；多候选 -> FAIL 提示 --project；无候选 -> 降级 |
+| 1 | `mvn clean test`（在 `--project` 指定模块目录执行，强制 clean，杜绝 target 残留污染） | 失败 -> FAIL；无 java/mvn 或 `--project` 目录无 pom.xml -> 降级模式 |
 | 2 | 调 `scan_test_stack` | `forbidden_findings` 非空 -> FAIL |
 | 3 | 调 `parse_test_results` | jacoco.xml / surefire 缺失 -> FAIL（不降级） |
 | 4 | 调 `scan_spec_annotations` | `unimplemented_rules` / `orphan_annotations` 非空 -> FAIL |
 | 5 | 内联解析测试源码 `@DisplayName`，**双向**对齐（DisplayName->@Spec + @Spec->DisplayName） | 不对齐数 > 0 或有 `@Spec` 无测试的规则，且 `require_displayname_match` -> FAIL |
 | 5.5 | 关键路径对抗校验（v0.5，configurable）：读 impact-report 逐规则 risk + 检测 `@DisplayName("Rn-对抗-...")` 对抗用例 | `critical_path_required=true` 且 high 风险规则 0 对抗用例 -> FAIL；`false` 跳过（降级） |
 | 6 | 读 `impact-report.md` 的 `risk_level` + 读 `testing-config.yml` | 套风险档阈值 |
-| 7 | 逐项比对覆盖率 / 通过率 / Spec 覆盖率与阈值 | 任一不达标 -> FAIL |
+| 7 | 逐项比对覆盖率（全量聚合 + diff coverage 变更行，若适用）/ 通过率 / Spec 覆盖率与阈值 | 任一不达标 -> FAIL |
 | 8 | **脚本直接写 `specs/<feature>/docs/gate-result.md`** + stdout 输出判定 JSON；写前只读正则检查 SOFT 标题存在性，缺则 WARN + `soft_missing: true`（不 FAIL） | AI 仅读，不能改判 |
 
 ### 步骤 2：读取判定 JSON 并输出指令
@@ -384,11 +389,12 @@ JaCoCo（prepare-agent + report）：
 ### 执行环境
 - mvn clean test: SUCCESS | FAIL
 - target 清理: 已清理（杜绝残留污染）
-- 模块定位: backend/（自动探测候选）| 未找到（degraded_reason: ...）
+- 模块定位: backend/（--project 指定）| 未找到（degraded_reason: ...）
 
 ### 单测明细
 - 总数: N | 通过: N | 失败: N
 - 行覆盖率: NN% (阈值 >=NN%) | 分支: NN% | 方法: NN% | 指令: NN% | 复杂度: NN%
+- 变更行覆盖率 (diff): NN% (阈值 >=NN%) | diff-base: HEAD | 未应用（无 git / 无 Java 变更）
 - 通过率: NN% (阈值 100%)
 
 ### 契约测试明细
@@ -429,26 +435,19 @@ EXECUTE_COMMAND: speckit.testing.gate
 修正完成并重新通过门禁前，不得继续后续流程。
 ```
 
-## 降级模式（无 java/mvn，或无 pom 且无候选模块）
+## 降级模式（无 java/mvn，或 --project 目录无 pom.xml）
 
-**降级判定（v0.6 语义修正，与脚本对齐）**：`degraded = 无 java/mvn 可执行
-**或**（`--project` 指向目录无 `pom.xml` 且 `_locate_module` 无候选模块）`。
-不再只看 `--project` 根 pom 是否存在——多模块 Java 项目传 repo 根时脚本先
-自动定位模块（见步骤 1 前置检查），避免误降级。
+**降级判定（beta 简化，与脚本对齐）**：`degraded = 无 java/mvn 可执行
+**或** `--project` 指向目录无 `pom.xml`（AI 定位错误）`。run_gate **不做
+模块自动探测**——多模块 Java 项目 MUST 先用 `find . -name pom.xml
+-maxdepth 3`（或已知工程结构）把 `--project` 指向含 pom.xml 的模块目录
+（如 `backend/`），传错（无 pom）即降级。
 
 脚本降级时输出 `degraded_reason`（如 `pom.xml not found at <path>` 或
 `no java/mvn on PATH`），gate-result.md"执行环境"段标注
 `模块定位: 未找到（degraded_reason: ...）`；stdout JSON 同时含
-`suggestion` 字段（降级或模块歧义时给具体建议命令，如
-`run_gate --project backend --spec specs/... --gate-result ...`）与
-`located_module`（自动探测结果，无候选时 null）。
-
-**模块定位行为**（`_locate_module`，递归探测深度 <= 2 的子模块 pom.xml）：
-
-- 唯一候选 -> WARN + 输出建议命令，**默认不自动切换执行目录**（防误判）
-- 多候选 -> FAIL，提示用 `--project` 显式指定模块
-- 无候选 -> 维持降级（真非 Java 项目）
-- CI 场景可加 `--auto-locate`（默认 false），true 时唯一候选自动采用
+`suggestion` 字段（降级时给具体建议命令，如
+`run_gate --project backend --spec specs/... --gate-result ...`）。
 
 降级时脚本**仅做 `@Spec` 静态扫描**，跳过 `mvn clean test` 与 @DisplayName
 解析（因无单测可读），仅执行 @Spec 注解扫描与 Spec 覆盖率阈值判定
@@ -458,9 +457,9 @@ EXECUTE_COMMAND: speckit.testing.gate
 降级时 AI 必须在输出中明确告知：
 
 ```text
-## ⚠️ 降级模式（无 java/mvn 或无 Maven 模块）
+## ⚠️ 降级模式（无 java/mvn 或 --project 无 pom.xml）
 
-未检测到 java/mvn，或未定位到含 pom.xml 的 Maven 模块（degraded_reason: ...），
+未检测到 java/mvn，或 --project 指向目录无 pom.xml（degraded_reason: ...），
 跳过单测与契约测试执行，仅做 @Spec 静态扫描。覆盖率与通过率检查被跳过。
 仅校验：
 - spec 规则覆盖率（unimplemented_rules / orphan_annotations）
@@ -479,7 +478,7 @@ EXECUTE_COMMAND: speckit.testing.gate
 | true | false | implement 4.5 做 + gate 不硬判（advisory，仅统计不阻断） |
 | false | false | implement 4.5 不做 + gate 不校验（off，最宽降级） |
 
-> `enabled` 控制 AI 行为（implement 4.5 阶段），`critical_path_required` 控制 gate 脚本是否硬判。降级模式（无 java/mvn 或无 Maven 模块）自动跳过对抗校验。
+> `enabled` 控制 AI 行为（implement 4.5 阶段），`critical_path_required` 控制 gate 脚本是否硬判。降级模式（无 java/mvn 或 `--project` 无 pom.xml）自动跳过对抗校验。
 
 ## PASS 后续动作
 

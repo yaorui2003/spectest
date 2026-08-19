@@ -78,18 +78,22 @@ def _parse_surefire(surefire_dir: Path) -> dict:
 
 
 def _parse_jacoco(jacoco_file: Path) -> tuple[dict, list[dict]]:
-    """解析 JaCoCo jacoco.xml，返回 (聚合覆盖率, class 级覆盖率列表)。
+    """解析 JaCoCo jacoco.xml，返回 (聚合覆盖率, 行级覆盖率列表)。
 
-    聚合覆盖率：全量 counter 汇总的各类百分比（整数，现状语义）。
+    聚合覆盖率：全量 counter 汇总的各类百分比（整数，现状语义，fallback_all
+    回退全量阈值判定与 gate-result.md 展示用）。
 
-    class 级覆盖率（v0.6 9.4，供 run_gate 覆盖率作用域判定）：
-    按 XML 出现顺序遍历 ``<package name>`` -> ``<class name>``，收集每 class
-    的 LINE/BRANCH/METHOD/INSTRUCTION/COMPLEXITY counter；百分比保留 2 位小数，
-    分母为 0（missed+covered==0）的指标给 ``None``（判定时跳过该指标）。
-    class 全名 = package + "." + class。
+    行级覆盖率（diff coverage 判定用）：按 XML 出现顺序遍历
+    ``<package name>`` -> ``<sourcefile name>`` -> ``<line nr mi ci mb cb>``；
+    ``key`` = package 名点转斜杠（``com.example`` -> ``com/example``）+ "/" +
+    sourcefile 名（如 ``com/example/AccountService.java``），与 git diff 相对
+    路径匹配（见 run_gate._compute_diff_coverage）；仅当 sourcefile 下存在
+    ``<line>`` 元素时输出该文件条目（无行级数据的文件不出现在 source_lines）；
+    lines 按 nr 升序。sourcefile 与 class 在 XML 中是 package 下的兄弟元素，
+    行级数据在 sourcefile 下，key 拼装只用 package + sourcefile 名。
     """
     cov = {key: 0 for key in JACOCO_TYPE_MAP.values()}
-    classes: list[dict] = []
+    source_lines: list[dict] = []
     if jacoco_file.is_file():
         try:
             root = ET.parse(str(jacoco_file)).getroot()
@@ -110,47 +114,40 @@ def _parse_jacoco(jacoco_file: Path) -> tuple[dict, list[dict]]:
                 cov[JACOCO_TYPE_MAP[t]] = (
                     round(covered / total * 100) if total > 0 else 0
                 )
-            # class 级覆盖率（按 XML 出现顺序）
+            # 行级数据（按 XML 出现顺序；key = package 点转斜杠 + / + sourcefile 名）
             for pkg_el in root.iter("package"):
-                pkg_name = pkg_el.attrib.get("name", "")
-                for cls_el in pkg_el.iter("class"):
-                    cls_name = cls_el.attrib.get("name", "")
-                    entry: dict = {
-                        "name": f"{pkg_name}.{cls_name}" if pkg_name else cls_name,
+                pkg_name = pkg_el.attrib.get("name", "") or ""
+                pkg_key = pkg_name.replace(".", "/")
+                for sf_el in pkg_el.iter("sourcefile"):
+                    sf_name = sf_el.attrib.get("name", "") or ""
+                    lines: list[dict] = []
+                    for line_el in sf_el.iter("line"):
+                        lines.append({
+                            "nr": int(line_el.attrib.get("nr", 0)),
+                            "mi": int(line_el.attrib.get("mi", 0)),
+                            "ci": int(line_el.attrib.get("ci", 0)),
+                        })
+                    if not lines:
+                        continue  # 无行级数据 -> 不出现在 source_lines
+                    lines.sort(key=lambda l: l["nr"])
+                    source_lines.append({
+                        "key": f"{pkg_key}/{sf_name}",
                         "package": pkg_name,
-                        "line_coverage": None,
-                        "branch_coverage": None,
-                        "method_coverage": None,
-                        "instruction_coverage": None,
-                        "complexity_coverage": None,
-                    }
-                    cls_sums: dict[str, list[int]] = {}
-                    for c in cls_el.iter("counter"):
-                        t = c.attrib.get("type")
-                        if t in JACOCO_TYPE_MAP:
-                            missed = int(c.attrib.get("missed", 0))
-                            covered = int(c.attrib.get("covered", 0))
-                            s = cls_sums.setdefault(t, [0, 0])
-                            s[0] += missed
-                            s[1] += covered
-                    for t, (missed, covered) in cls_sums.items():
-                        total = missed + covered
-                        entry[JACOCO_TYPE_MAP[t]] = (
-                            round(covered / total * 100, 2) if total > 0 else None
-                        )
-                    classes.append(entry)
-    return cov, classes
+                        "file": sf_name,
+                        "lines": lines,
+                    })
+    return cov, source_lines
 
 
 def parse_results(surefire_dir: Path, jacoco_file: Path) -> dict:
-    """组装测试结果 JSON 对象（含 v0.6 9.4 class 级覆盖率）。"""
+    """组装测试结果 JSON 对象（含行级覆盖率，diff coverage 判定用）。"""
     tests = _parse_surefire(surefire_dir)
-    cov, classes = _parse_jacoco(jacoco_file)
+    cov, source_lines = _parse_jacoco(jacoco_file)
     return {
         "unit_tests": tests["unit_tests"],
         "contract_tests": tests["contract_tests"],
         "coverage": cov,
-        "classes": classes,
+        "source_lines": source_lines,
     }
 
 

@@ -8,29 +8,30 @@ AI 仅读 stdout 判定 JSON，**不能改判、不能补写 gate-result.md、�
 职责（v0.4 第五章 5.2 的 9 步 + v0.5 步骤 5.5 关键路径对抗校验 + v0.6 改进项）:
 
 0. 检查 ``specs/<feature>/docs/impact-report.md`` 存在（不存在 -> FAIL，堵 P0 #3）
-1. ``mvn clean test``（强制 clean，杜绝 target 残留污染，堵 P0 #2；v0.6 在
-   ``collect_environment`` 定位的 ``mvn_dir`` 执行）
+1. ``mvn clean test``（强制 clean，杜绝 target 残留污染，堵 P0 #2；在
+   ``--project`` 目录执行，AI 负责传对含 pom.xml 的模块目录）
 2. 调 ``scan_test_stack``（forbidden_findings 非空 -> FAIL）
 3. 调 ``parse_test_results``（jacoco.xml/surefire-reports 缺失 -> FAIL，不降级；
-   v0.6 9.4 消费其 class 级覆盖率做作用域判定）
+   消费其 ``source_lines`` 行级数据做 diff coverage 判定）
 4. 调 ``scan_spec_annotations``（unimplemented_rules/orphan_annotations 非空 -> FAIL；
-   v0.6 9.6 读取其 ``unspec_codes`` 漂移告警，MEDIUM 不阻断）
+   读取其 ``unspec_codes`` 漂移告警，MEDIUM 不阻断）
 5. 内联解析 test 源码 ``@DisplayName("Rn-...")`` 算对齐数
 5.5. 关键路径对抗校验（v0.5 新增）：读 impact-report 逐规则 risk + 检测
     ``@DisplayName("Rn-对抗-...")``；``critical_path_required=true`` 且 high
     风险规则 0 对抗用例 -> FAIL（configurable，false 降级跳过）
 6. 读 ``impact-report.md`` 的 ``risk_level`` + 读 ``testing-config.yml`` 套风险档阈值
-7. 逐项比对覆盖率/通过率/Spec 覆盖率与阈值（v0.6 9.4：非 all 时按作用域内 class
-   逐个判定，作用域外类只统计不 FAIL；越界/空作用域 -> FAIL；baseline 增量退化 -> FAIL）
+7. 逐项比对覆盖率/通过率/Spec 覆盖率与阈值（**diff coverage**：只判 MR/工作区
+   变更行覆盖率，``git diff --unified=0`` 提取变更行、JaCoCo 行级数据判覆盖；
+   git 不可用回退全量聚合阈值；无变更行跳过不判）
 8. **脚本直接写 ``specs/<feature>/docs/gate-result.md``** + stdout 输出判定 JSON
-   （v0.6 5.1/9.3：写前只读正则检查 SOFT 段标题，缺失 WARN + soft_missing=true 不改判）
+   （写前只读正则检查 SOFT 段标题，缺失 WARN + soft_missing=true 不改判；旧文件
+   中 AI 手写的 SOFT 段追加保留，避免覆盖后 WARN 复现）
 
-降级模式（v0.4 5.5 + v0.6 4.1/9.2）：``collect_environment`` 判定——无
-``java``/``mvn`` 可执行，**或项目无根 ``pom.xml`` 且无深度<=2 候选子模块 pom**时，
-降级为仅做 ``@Spec`` 静态扫描（步骤 4 + 6 的 Spec 覆盖率阈值判定），跳过步骤 1-3/5。
-唯一候选模块不降级（WARN + suggestion 建议命令，``--auto-locate`` 供 CI 自动采用）；
-多候选视为用法错误（exit 2，提示显式 ``--project``）。这是唯一降级场景；Java 项目
-缺 JaCoCo/surefire 报告**不降级，直接 FAIL**。
+降级模式：``collect_environment`` 判定——无 ``java``/``mvn`` 可执行，**或
+``--project`` 目录无 ``pom.xml``**（AI 应先 ``find . -name pom.xml`` 定位模块
+目录再传对 ``--project``；传错即降级并提示）时，降级为仅做 ``@Spec`` 静态扫描
+（步骤 4 + 6 的 Spec 覆盖率阈值判定），跳过步骤 1-3/5。这是唯一降级场景；
+Java 项目缺 JaCoCo/surefire 报告**不降级，直接 FAIL**。
 
 ``--check-only`` 子模式：供 implement 第 4.5 阶段（对抗测试）调用，只跑步骤 1-8
 （含 5.5 对抗校验）不写 gate-result.md，输出当前覆盖率与阈值差距 JSON，
@@ -39,14 +40,13 @@ AI 仅读 stdout 判定 JSON，**不能改判、不能补写 gate-result.md、�
 用法::
 
     python run_gate.py --source <java_dir> --test-source <test_dir> --spec <spec.md> \
-        --project <root> --feature-dir <specs/<feature>> --config <testing-config.yml> \
-        [--check-only] [--auto-locate] [--coverage-scope auto|<pkg,...>|all] \
-        [--baseline <file>] --json
+        --project <module_dir> --feature-dir <specs/<feature>> --config <testing-config.yml> \
+        [--check-only] [--diff-threshold <pct>] [--diff-base <branch>] --json
 
 三语言（py/sh/ps）等价：本脚本的 ``run()`` 是**唯一确定性核心**（阈值比对 + 判定
 + 写 gate-result.md + JSON 序列化）；``collect_environment()`` 是环境收集的唯一
-实现（java/mvn 检测 + 模块定位），bash/PowerShell 版本负责调用/透传；通过
-``python3 -c`` 导入本模块调用 ``run()``，输出与 Python 版字节级等价（复用
+实现（java/mvn 检测）；bash/PowerShell 版本负责调用/透传；通过 ``python3 -c``
+导入本模块调用 ``run()``，输出与 Python 版字节级等价（复用
 ``json.dumps(result, ensure_ascii=False, indent=2)`` 格式）。
 """
 
@@ -66,169 +66,161 @@ DISPLAYNAME_RE = re.compile(r'@DisplayName\s*\(\s*"R(\d+)-')
 # 对抗用例识别：@DisplayName("Rn-对抗-...")，提取规则编号（v0.5 步骤 5.5）
 ADVERSARIAL_RE = re.compile(r'@DisplayName\s*\(\s*"R(\d+)-对抗')
 
-# class 级覆盖率指标 -> 阈值键（v0.6 9.4 作用域判定）
-_METRIC_THRESHOLD_MAP = {
-    "line_coverage": "line_coverage_min",
-    "branch_coverage": "branch_coverage_min",
-    "method_coverage": "method_coverage_min",
-    "instruction_coverage": "instruction_coverage_min",
-    "complexity_coverage": "complexity_coverage_min",
-}
+# diff coverage：git diff hunk 头解析（U0 时新文件变更行 = c..c+d-1）
+# @@ -a,b +c,d @@；b/d 缺省为 1（单行）。MULTILINE：hunk 行在 diff 输出中间
+_DIFF_HUNK_RE = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,(\d+))? @@", re.MULTILINE)
 
-# class 级覆盖率指标 -> 聚合 coverage dict 键（threshold_results 展示用）
-_COVERAGE_KEY_MAP = {
-    "line_coverage": "line",
-    "branch_coverage": "branch",
-    "method_coverage": "method",
-    "instruction_coverage": "instruction",
-    "complexity_coverage": "complexity",
-}
+# diff coverage：java 文件 package 声明（完整包名，非顶层包）
+_PACKAGE_DECL_RE = re.compile(r"^\s*package\s+([\w.]+)\s*;", re.MULTILINE)
 
-# 模块定位跳过的目录（_locate_module）
-_MODULE_SKIP_DIRS = {".git", "node_modules", "target", "dist", "build"}
-
-# 顶层包提取：package com.example; -> "com"
-_PACKAGE_TOP_RE = re.compile(r"^\s*package\s+([A-Za-z_][A-Za-z0-9_]*)\b", re.MULTILINE)
+# AI 交叉验证段标题（v0.6 5.1/9.3 只读检查 + 写 gate-result.md 保留 AI
+# 手写段共用）。行首锚定 MULTILINE：只认独立标题行，杜绝脚本 WARN 文案自命中
+# （脚本写出的文本不含完整标题行 -> 同 fixture 二次运行 soft_missing 稳定）。
+_SOFT_HEADER_RE = re.compile(r"^##\s+AI 交叉验证（SOFT，不影响判定）\s*$", re.MULTILINE)
 
 
-def _top_level_package(java_file: Path) -> str | None:
-    """从 java 文件内容解析 ``package x.y.z;`` 的第一个标识符（顶层包）。
+def collect_environment(project: str) -> dict:
+    """环境收集（v0.6 降级判定，三语言共享的唯一实现）。
 
-    解析失败（文件不存在/无 package 声明）返回 None。
-    """
-    try:
-        text = java_file.read_text(encoding="utf-8")
-    except OSError:
-        return None
-    m = _PACKAGE_TOP_RE.search(text)
-    return m.group(1) if m else None
+    返回 ``{"degraded": bool, "degraded_reason": str}``。
 
-
-def _git_diff_packages(mvn_dir: str) -> tuple[bool, set[str], set[str]]:
-    """git diff --name-only HEAD 提取改动 Java 文件的顶层包。
-
-    返回 (has_git, main_pkgs, all_pkgs)：
-    - main_pkgs：排除 ``src/test/`` 路径的 java 文件顶层包（auto 作用域推导用）；
-    - all_pkgs：全部改动 java 文件（含测试）顶层包（越界检测用）；
-    - git 不可用/非 git 仓库/超时返回 (False, set(), set())，调用方回退 all 语义
-      （保守方向，宁严勿松，不得静默降级为空作用域）。
-    """
-    try:
-        proc = subprocess.run(
-            ["git", "diff", "--name-only", "HEAD"],
-            cwd=mvn_dir, capture_output=True, text=True, timeout=60,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return False, set(), set()
-    if proc.returncode != 0:
-        return False, set(), set()
-    main_pkgs: set[str] = set()
-    all_pkgs: set[str] = set()
-    for line in proc.stdout.splitlines():
-        rel = line.strip()
-        if not rel.endswith(".java"):
-            continue
-        pkg = _top_level_package(Path(mvn_dir) / rel)
-        if pkg is None:
-            continue
-        all_pkgs.add(pkg)
-        # 排除测试路径（src/test/...）：统一加前导斜杠再匹配，兼容相对路径
-        if "/src/test/" not in "/" + rel:
-            main_pkgs.add(pkg)
-    return True, main_pkgs, all_pkgs
-
-
-def _locate_module(project: str) -> tuple[str | None, str]:
-    """递归扫描 project 下深度 <= 2 的 pom.xml，返回 (module_relpath|None, status)。
-
-    status ∈ ``unique`` | ``ambiguous`` | ``none``。
-    深度 1 匹配 ``*/pom.xml``，深度 2 匹配 ``*/*/pom.xml``；路径任一段命中
-    ``.git/node_modules/target/dist/build`` 的目录跳过。候选保持 glob 排序。
-    """
-    root = Path(project)
-    candidates: list[str] = []
-    if root.is_dir():
-        for depth in (1, 2):
-            pattern = "/".join(["*"] * depth + ["pom.xml"])
-            for pom in sorted(root.glob(pattern)):
-                parts = pom.relative_to(root).parts
-                if any(part in _MODULE_SKIP_DIRS for part in parts[:-1]):
-                    continue
-                candidates.append(str(Path(*parts[:-1])))
-    if len(candidates) == 1:
-        return candidates[0], "unique"
-    if len(candidates) >= 2:
-        return None, "ambiguous"
-    return None, "none"
-
-
-def collect_environment(project: str, auto_locate: bool) -> dict:
-    """环境收集（v0.6 4.1/9.2，三语言共享的唯一实现）。
-
-    返回 ``{"degraded": bool, "located_module": str|None, "degraded_reason": str,
-    "suggestion": str, "mvn_dir": str}``。
-
-    语义（与文档 4.1 一致）：
+    语义：
     - 无 java/mvn（shutil.which）：degraded=True，degraded_reason="no java/mvn on PATH"；
-    - 有 java+mvn 且根 pom.xml 存在：degraded=False，degraded_reason=""；
-    - 有 java+mvn 且无根 pom：``_locate_module`` 定位
-      - unique：不降级，located_module=模块相对路径，suggestion=完整重跑命令
-        （``run_gate --project <module> --source ... --test-source ... --spec ...
-        --feature-dir ... --config ...``）；mvn_dir：auto_locate 时=候选模块
-        （CI 自动采用，mvn 可跑），否则=project（mvn 不跑，由 main 决定）；
-      - ambiguous：不降级但 located_module=None，suggestion=多模块提示，
-        main() 判为用法错误 exit 2（不产 gate 结果）；
-      - none：degraded=True，degraded_reason="pom.xml not found at <project>"。
+    - 有 java+mvn 但 ``--project`` 目录无 ``pom.xml``：degraded=True，
+      degraded_reason="pom.xml not found at <path>（AI 应先 find . -name pom.xml
+      定位模块目录再传对 --project）"；
+    - 有 java+mvn 且 ``--project`` 有 ``pom.xml``：degraded=False。
     """
     has_java = shutil.which("java") is not None
     has_mvn = shutil.which("mvn") is not None
     if not (has_java and has_mvn):
+        return {"degraded": True, "degraded_reason": "no java/mvn on PATH"}
+    if not (Path(project) / "pom.xml").is_file():
         return {
             "degraded": True,
-            "located_module": None,
-            "degraded_reason": "no java/mvn on PATH",
-            "suggestion": "",
-            "mvn_dir": project,
-        }
-    if (Path(project) / "pom.xml").is_file():
-        return {
-            "degraded": False,
-            "located_module": None,
-            "degraded_reason": "",
-            "suggestion": "",
-            "mvn_dir": project,
-        }
-    module, status = _locate_module(project)
-    if status == "unique":
-        assert module is not None, "unique 状态必有候选模块"
-        return {
-            "degraded": False,
-            "located_module": module,
-            "degraded_reason": "",
-            "suggestion": (
-                f"run_gate --project {module} --source ... --test-source ... "
-                f"--spec ... --feature-dir ... --config ..."
+            "degraded_reason": (
+                f"pom.xml not found at {project}"
+                "（AI 应先 find . -name pom.xml 定位模块目录再传对 --project）"
             ),
-            "mvn_dir": str(Path(project) / module) if auto_locate else project,
         }
-    if status == "ambiguous":
-        return {
-            "degraded": False,
-            "located_module": None,
-            "degraded_reason": "",
-            "suggestion": (
-                "多模块候选：project 下存在多个 pom.xml 子模块，"
-                "请用 --project 显式指定模块（可先 find . -name pom.xml -maxdepth 3）"
-            ),
-            "mvn_dir": project,
-        }
+    return {"degraded": False, "degraded_reason": ""}
+
+
+def _compute_diff_coverage(mvn_dir: str, diff_base: str, source_lines: list) -> dict:
+    """计算 MR/工作区变更行覆盖率（diff coverage，替代 v0.6 9.4 作用域方案）。
+
+    git diff 行号提取：
+    - 无 ``diff_base``：``git diff --unified=0 HEAD -- <java 文件>``（工作区 vs HEAD）；
+    - 有 ``diff_base <branch>``：先 ``git merge-base <branch> HEAD`` 得 base，再
+      ``git diff --unified=0 <base> -- <java 文件>``（MR 场景）。
+    解析 hunk 头 ``@@ -a,b +c,d @@``：U0 时新文件变更行 = c..c+d-1（d=0 为纯删除
+    行不算）。路径过滤 ``*.java``。
+
+    文件映射：对每个 diff java 文件解析 package 声明（``^\s*package\s+([\w.]+)\s*;``）
+    + 文件名构造 key（``package.replace('.','/') + "/" + basename``，如
+    ``com/example/AccountService.java``），与 source_lines 的 key 匹配；找不到
+    （未编译/无 jacoco 数据）-> 该文件所有变更行计为未覆盖（声明即承诺，保守方向）。
+
+    返回：
+    - ``{"mode": "diff", "base": <base 描述>, "total_lines": n, "covered_lines": m,
+       "percent": x|None}``；
+    - ``{"mode": "fallback_all", ...}``：git 不可用/非 git 仓库/超时/失败；
+    - ``{"mode": "no_changes", ...}``：git 正常但无 java 变更行。
+    """
+    empty = {"mode": "fallback_all", "base": "", "total_lines": 0, "covered_lines": 0, "percent": None}
+    # 1. 定位 base（无 diff_base 用 HEAD）
+    if diff_base:
+        try:
+            mb = subprocess.run(
+                ["git", "merge-base", diff_base, "HEAD"],
+                cwd=mvn_dir, capture_output=True, text=True, timeout=60,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return empty
+        if mb.returncode != 0:
+            return empty
+        base = (mb.stdout.strip() or diff_base)[:12]
+    else:
+        base = "HEAD"
+
+    # 2. 变更 java 文件列表
+    try:
+        proc = subprocess.run(
+            ["git", "diff", "--name-only", base],
+            cwd=mvn_dir, capture_output=True, text=True, timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return empty
+    if proc.returncode != 0:
+        return empty
+    java_files = [line.strip() for line in proc.stdout.splitlines() if line.strip().endswith(".java")]
+    if not java_files:
+        return {"mode": "no_changes", "base": base, "total_lines": 0, "covered_lines": 0, "percent": None}
+
+    # 3. 逐文件提取变更行号：{相对路径: set(行号)}
+    changed: dict[str, set[int]] = {}
+    for rel in java_files:
+        try:
+            dp = subprocess.run(
+                ["git", "diff", "--unified=0", base, "--", rel],
+                cwd=mvn_dir, capture_output=True, text=True, timeout=60,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return empty
+        if dp.returncode != 0:
+            return empty
+        lines: set[int] = set()
+        for hunk in _DIFF_HUNK_RE.finditer(dp.stdout):
+            start = int(hunk.group(2))
+            count = int(hunk.group(3)) if hunk.group(3) else 1
+            if count > 0:
+                lines.update(range(start, start + count))
+        if lines:
+            changed[rel] = lines
+
+    # 4. source_lines 索引：key -> {nr: ci}
+    line_index: dict[str, dict[int, int]] = {}
+    for entry in source_lines:
+        if not isinstance(entry, dict):
+            continue
+        key = entry.get("key")
+        if not key:
+            continue
+        per_line = line_index.setdefault(key, {})
+        for ln in entry.get("lines") or []:
+            nr = ln.get("nr")
+            if isinstance(nr, int):
+                per_line[nr] = int(ln.get("ci", 0))
+
+    # 5. 汇总：变更行覆盖 = 行存在且 ci>0；缺失（未编译/无数据）视为未覆盖
+    total_lines = 0
+    covered_lines = 0
+    for rel, linenos in changed.items():
+        total_lines += len(linenos)
+        pkg_m = _PACKAGE_DECL_RE.search(_safe_read(Path(mvn_dir) / rel))
+        if pkg_m is None:
+            continue  # 无 package 声明：全部变更行视为未覆盖
+        key = pkg_m.group(1).replace(".", "/") + "/" + Path(rel).name
+        per_line = line_index.get(key, {})
+        for nr in linenos:
+            if per_line.get(nr, 0) > 0:
+                covered_lines += 1
+    percent = round(covered_lines / total_lines * 100) if total_lines > 0 else None
     return {
-        "degraded": True,
-        "located_module": None,
-        "degraded_reason": f"pom.xml not found at {project}",
-        "suggestion": "",
-        "mvn_dir": project,
+        "mode": "diff",
+        "base": base,
+        "total_lines": total_lines,
+        "covered_lines": covered_lines,
+        "percent": percent,
     }
+
+
+def _safe_read(path: Path) -> str:
+    """读取文件内容，失败返回空串（diff 文件可能已被删除/不可读）。"""
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
 
 
 def _parse_affected_rules(impact_path: Path) -> dict[str, str]:
@@ -451,8 +443,9 @@ def _parse_displayname_match(test_source: str, spec_coverage: dict) -> dict:
 def _format_gate_result_md(result: dict) -> str:
     """按 v0.4 5.4 格式生成 gate-result.md 内容（脚本直接写，AI 不能改判）。
 
-    v0.6 增补：执行环境段补模块定位/建议（4.3），单测明细段补覆盖作用域行
-    （6.3），末尾加漂移告警段（9.6，MEDIUM 不阻断）与 SOFT 状态行（5.1/9.3）。
+    v0.6 调整：执行环境段展示降级原因（degraded_reason），单测明细段以
+    diff coverage 行为主（diff / no_changes / fallback_all / 降级 N/A 四态），
+    末尾保留漂移告警段（MEDIUM 不阻断）与 SOFT 状态行（5.1/9.3）。
     """
     status = result["status"]
     mode = result["mode"]
@@ -471,30 +464,32 @@ def _format_gate_result_md(result: dict) -> str:
     lines.append("### 执行环境")
     lines.append(f"- mvn clean test: {mvn}")
     if mode == "degraded":
-        lines.append("- 降级模式: 降级模式（无 java/mvn 或项目无 pom.xml 且无候选模块）")
-        lines.append("- 说明: 无 java/mvn 或项目无 pom.xml 且无候选模块，跳过单测/契约测试执行，仅做 @Spec 静态扫描")
-        lines.append(f"- 模块定位: 未找到（degraded_reason: {result.get('degraded_reason', '')}）")
+        lines.append("- 降级模式: 降级模式（无 java/mvn 或 --project 目录无 pom.xml）")
+        lines.append("- 说明: 无 java/mvn 或 --project 无 pom.xml，跳过单测/契约测试执行，仅做 @Spec 静态扫描")
+        lines.append(f"- 降级原因: {result.get('degraded_reason', '')}")
     else:
         lines.append("- target 清理: 已清理（杜绝残留污染）")
-        located = result.get("located_module") or "（根目录）"
-        lines.append(f"- 模块定位: {located}")
-    if result.get("suggestion"):
-        lines.append(f"- 建议: {result['suggestion']}")
     lines.append("")
     lines.append("### 单测明细")
     lines.append(f"- 总数: {unit['total']} | 通过: {unit['passed']} | 失败: {unit['failed']}")
-    lines.append(
-        f"- 行覆盖率: {cov['line']}% (阈值 >= {thr.get('line_coverage', 0)}%)"
-        f" | 分支: {cov['branch']}% | 方法: {cov['method']}%"
-        f" | 指令: {cov['instruction']}% | 复杂度: {cov['complexity']}%"
-    )
+    # diff coverage 行（替代行覆盖率行；四态：diff / no_changes / fallback_all / N/A）
+    diff = result.get("diff_coverage")
+    diff = diff if isinstance(diff, dict) else {}
+    diff_mode = diff.get("mode", "N/A")
+    diff_thr = thr.get("diff_coverage", 0)
+    if diff_mode == "diff":
+        pct = diff.get("percent")
+        lines.append(
+            f"- diff coverage: {pct}% (变更行 {diff.get('covered_lines', 0)}/{diff.get('total_lines', 0)},"
+            f" base: {diff.get('base', '')}) | 阈值 >= {diff_thr}%"
+        )
+    elif diff_mode == "no_changes":
+        lines.append("- diff coverage: 无 Java 变更行，跳过（无承诺）")
+    elif diff_mode == "fallback_all":
+        lines.append("- diff coverage: 无 git，回退全量阈值判定")
+    else:
+        lines.append("- diff coverage: N/A（降级模式）")
     lines.append(f"- 通过率: {unit['pass_rate']}% (阈值 >= {thr.get('unit_pass_rate', 0)}%)")
-    lines.append(
-        f"- 覆盖作用域: {result.get('coverage_scope', 'all')}"
-        f" | 作用域内类: {result.get('scope_total', 0)}"
-        f" | 达标: {result.get('scope_covered', 0)}"
-        f" | 作用域外类: {result.get('scope_outside_total', 0)}"
-    )
     lines.append("")
     lines.append("### 契约测试明细")
     lines.append(
@@ -571,11 +566,10 @@ def run(inputs: dict) -> dict:
       mvn_status：'SUCCESS' | 'FAIL' | 'SKIPPED'
       impact_ok：bool
       scan_stack / parse_results / scan_spec：子脚本输出 dict（或 None）
-      v0.6 新增（bash/ps 透传，缺省有兜底值）：
-        auto_locate / located_module / degraded_reason / suggestion / mvn_dir
-        coverage_scope：'auto'（默认）| '<pkg,...>' | 'all'（默认取 config
-          gate.coverage_scope，main() 已解析）
-        baseline：baseline 快照文件路径（None 不启用；与 all 互斥，main() 已校验）
+      diff_threshold：变更行覆盖率阈值（%）；空/None 回落 config
+        gate.diff_coverage_threshold，仍无则 80
+      diff_base：MR 对比分支；空/None 回落 config gate.diff_base，仍无则 ""
+        （工作区 vs HEAD）
     """
     source = inputs.get("source", "")
     test_source = inputs.get("test_source", "")
@@ -589,18 +583,12 @@ def run(inputs: dict) -> dict:
     scan_stack = inputs.get("scan_stack")
     parse_results = inputs.get("parse_results")
     scan_spec = inputs.get("scan_spec")
-    mvn_dir = str(inputs.get("mvn_dir") or project)
-    coverage_scope = str(inputs.get("coverage_scope") or "auto")
-    baseline = inputs.get("baseline") or None
-    located_module = inputs.get("located_module")
+    diff_threshold = inputs.get("diff_threshold")
+    diff_base = str(inputs.get("diff_base") or "")
     degraded_reason = str(inputs.get("degraded_reason") or "")
-    suggestion = str(inputs.get("suggestion") or "")
 
-    # 覆盖率作用域统计默认值（degraded / all / 回退路径兜底）
-    scope_desc = "N/A（降级模式）" if degraded else coverage_scope
-    scope_total = 0
-    scope_covered = 0
-    scope_outside_total = 0
+    # diff coverage 默认值（degraded 模式 N/A；非降级时在步骤 7 计算覆盖）
+    diff_coverage = {"mode": "N/A", "base": "", "total_lines": 0, "covered_lines": 0, "percent": None}
 
     fail_reasons: list[str] = []
 
@@ -615,6 +603,16 @@ def run(inputs: dict) -> dict:
     risk_level = _parse_risk_level(impact_path)
     cfg = _load_config(Path(config_path))
     thr = _resolve_thresholds(cfg, risk_level)
+
+    # config 可写默认、CLI 可覆盖：CLI 非空用 CLI，空则回落 config
+    # gate.diff_coverage_threshold / gate.diff_base，仍无则 80 / ""。
+    # bash/ps 透传空字符串即触发回落，三语言行为一致。
+    gate_cfg = cfg.get("gate", {}) if isinstance(cfg.get("gate"), dict) else {}
+    if diff_threshold is None or diff_threshold == "":
+        diff_threshold = gate_cfg.get("diff_coverage_threshold", 80)
+    diff_threshold = int(diff_threshold)
+    if not diff_base:
+        diff_base = str(gate_cfg.get("diff_base") or "")
 
     # 步骤 4：@Spec 扫描（full 与 degraded 都执行）
     spec_coverage = scan_spec if isinstance(scan_spec, dict) else {}
@@ -638,13 +636,13 @@ def run(inputs: dict) -> dict:
             fail_reasons.append("mvn clean test 失败 -> 修复编译/测试错误后重新运行门禁")
         elif mvn_status == "SKIPPED":
             fail_reasons.append(
-                "mvn clean test 未执行（SKIPPED）-> 多模块项目请用 --auto-locate"
-                " 自动采用候选模块，或 --project <模块> 显式指定含 pom.xml 的模块后重跑"
+                "mvn clean test 未执行（SKIPPED）-> 请确认 --project 指向含 pom.xml"
+                " 的模块目录（AI 应先 find . -name pom.xml 定位）后重跑"
             )
 
-        # 步骤 3：报告存在性（不降级；缺失即 FAIL；v0.6 基于 mvn_dir 的 target/）
-        surefire_dir = Path(mvn_dir) / "target" / "surefire-reports"
-        jacoco_file = Path(mvn_dir) / "target" / "site" / "jacoco" / "jacoco.xml"
+        # 步骤 3：报告存在性（不降级；缺失即 FAIL；基于 --project 的 target/）
+        surefire_dir = Path(project) / "target" / "surefire-reports"
+        jacoco_file = Path(project) / "target" / "site" / "jacoco" / "jacoco.xml"
         if not (surefire_dir.is_dir() and any(surefire_dir.glob("*.xml"))):
             fail_reasons.append(
                 "surefire-reports 缺失（未配置 maven-surefire-plugin?）"
@@ -735,52 +733,39 @@ def run(inputs: dict) -> dict:
                 " -> 补齐 @Spec 注解"
             )
     else:
-        # ── v0.6 9.4：覆盖率作用域解析（auto | <pkg,...> | all）──
-        # 原则：作用域管阈值不管执行（全量 mvn clean test 永远跑）；非 all 时
-        # 按作用域内 class 逐类判定，作用域外类只统计（INFO）不 FAIL。
-        scope_mode = "all"
-        scope_pkgs: set[str] = set()
-        scope_desc = "all"
-        has_git = False
-        main_pkgs: set[str] = set()
-        all_pkgs: set[str] = set()
-        if coverage_scope != "all":
-            has_git, main_pkgs, all_pkgs = _git_diff_packages(mvn_dir)
-        if coverage_scope == "auto":
-            if not has_git:
-                scope_mode = "all"  # 无 git/失败 -> 回退全量（保守，宁严勿松）
-                scope_desc = "all（auto 无 git，回退全量）"
-            else:
-                scope_mode = "auto"
-                scope_pkgs = main_pkgs
-        elif coverage_scope == "all":
-            scope_mode = "all"
-        else:
-            scope_mode = "explicit"
-            scope_pkgs = {p.strip() for p in coverage_scope.split(",") if p.strip()}
-        # 越界检测（声明即承诺）：git diff 的 java 文件顶层包不在作用域内 -> FAIL
-        if scope_mode in ("auto", "explicit") and scope_pkgs and has_git:
-            outside = all_pkgs - scope_pkgs
-            if outside:
-                fail_reasons.append(
-                    "coverage scope 越界: git diff 的 Java 文件顶层包 "
-                    + ", ".join(sorted(outside))
-                    + " 不在作用域内（声明即承诺）-> 补充作用域后重跑"
-                )
-        # 空作用域 -> FAIL（无法承诺任何改动被覆盖）
-        if scope_mode in ("auto", "explicit") and not scope_pkgs:
-            fail_reasons.append("coverage scope 为空：git diff 无 Java 改动文件")
-        if scope_mode == "auto":
-            scope_desc = "auto（git diff: " + (", ".join(sorted(scope_pkgs)) or "空") + "）"
-        elif scope_mode == "explicit":
-            scope_desc = ", ".join(sorted(scope_pkgs)) if scope_pkgs else coverage_scope
-
-        classes = parse_results.get("classes") if isinstance(parse_results, dict) else None
-        if not isinstance(classes, list):
-            classes = None
-
-        if scope_mode == "all" or classes is None:
-            # 全量聚合判定（all 语义，或 parse_results 无 classes 字段时回退）
+        # ── diff coverage 判定（替代 v0.6 9.4 作用域方案）──
+        # 只判 MR/工作区变更行覆盖率（git diff --unified=0 提取变更行 + JaCoCo
+        # 行级数据判覆盖）；git 不可用回退全量聚合阈值；无变更行跳过不判。
+        source_lines = parse_results.get("source_lines") if isinstance(parse_results, dict) else []
+        if not isinstance(source_lines, list):
+            source_lines = []
+        diff_coverage = _compute_diff_coverage(project, diff_base, source_lines)
+        diff_mode = diff_coverage.get("mode", "fallback_all")
+        if diff_mode == "diff":
+            percent = diff_coverage.get("percent")
+            if percent is not None:
+                ok = percent >= diff_threshold
+                threshold_results.append({
+                    "metric": "diff_coverage",
+                    "actual": percent,
+                    "threshold": diff_threshold,
+                    "pass": ok,
+                })
+                if not ok:
+                    fail_reasons.append(
+                        f"diff coverage {percent}% < {diff_threshold}%"
+                        f" (变更行 {diff_coverage.get('covered_lines', 0)}/{diff_coverage.get('total_lines', 0)})"
+                    )
+            # percent None（total=0 防御）：不判
+        elif diff_mode == "no_changes":
+            # diff 维度 PASS（INFO 行，无承诺）
+            threshold_results.append({
+                "metric": "diff_coverage",
+                "actual": None,
+                "threshold": diff_threshold,
+                "pass": True,
+            })
+        else:  # fallback_all：回退全量聚合阈值判定（保留原全量逻辑）
             metrics = [
                 ("line_coverage", coverage["line"], thr["line_coverage_min"]),
                 ("branch_coverage", coverage["branch"], thr["branch_coverage_min"]),
@@ -797,9 +782,8 @@ def run(inputs: dict) -> dict:
                 })
                 if not ok:
                     fail_reasons.append(f"{metric} {actual}% < {threshold}% ({risk_level})")
-        else:
-            # 作用域判定：作用域内类逐个按 5 项覆盖率阈值判定 FAIL；
-            # 作用域外类只统计（scope_outside_total）不 FAIL。
+        # diff/no_changes 模式下通过率仍判（fallback_all 已含）
+        if diff_mode in ("diff", "no_changes"):
             for metric, actual, threshold in [
                 ("unit_pass_rate", unit_tests["pass_rate"], thr["unit_pass_rate_min"]),
                 ("contract_pass_rate", contract_tests["pass_rate"], thr["contract_pass_rate_min"]),
@@ -810,90 +794,7 @@ def run(inputs: dict) -> dict:
                 })
                 if not ok:
                     fail_reasons.append(f"{metric} {actual}% < {threshold}% ({risk_level})")
-            # jacoco.xml 的 package name 用 "/" 分隔（com/example），作用域用 "."
-            # （com.example），先归一化再匹配——否则真实 jacoco 数据永远匹配不上
-            # （作用域内类恒为空 -> 判定空转，bug 修复：9.4）。
-            scope_classes = [
-                c for c in classes
-                if (c.get("package") or "").replace("/", ".") in scope_pkgs
-            ]
-            outside_classes = [
-                c for c in classes
-                if (c.get("package") or "").replace("/", ".") not in scope_pkgs
-            ]
-            scope_total = len(scope_classes)
-            scope_outside_total = len(outside_classes)
-            scope_covered = 0
-            # baseline 加载（--baseline <file>，未启用时为空 dict）
-            baseline_data: dict = {}
-            baseline_first_run = False
-            if baseline is not None:
-                bp = Path(baseline)
-                if bp.is_file():
-                    try:
-                        loaded = json.loads(bp.read_text(encoding="utf-8"))
-                        if isinstance(loaded, dict):
-                            baseline_data = loaded
-                    except (OSError, json.JSONDecodeError):
-                        baseline_data = {}
-                else:
-                    baseline_first_run = True
-            metric_fail: dict[str, bool] = {m: False for m in _METRIC_THRESHOLD_MAP}
-            for c in scope_classes:
-                cname = c.get("name", "?")
-                base = baseline_data.get(cname) if baseline_data else None
-                class_ok = True
-                if base is not None:
-                    # baseline 模式：绝对值不判，只查增量退化（当前 < baseline - 5.0）
-                    for metric in _METRIC_THRESHOLD_MAP:
-                        cur = c.get(metric)
-                        bval = base.get(metric)
-                        if cur is None or bval is None:
-                            continue  # 缺失指标跳过
-                        if cur < bval - 5.0:
-                            fail_reasons.append(
-                                f"baseline 退化: {cname} {metric}"
-                                f" ({cur}% < baseline {bval}% - 5%)"
-                            )
-                            class_ok = False
-                            metric_fail[metric] = True
-                elif baseline is None:
-                    # 绝对值阈值判定（baseline 启用时绝对值不判）
-                    for metric, key in _METRIC_THRESHOLD_MAP.items():
-                        cur = c.get(metric)
-                        if cur is None:
-                            continue  # 缺失指标跳过
-                        if cur < thr[key]:
-                            fail_reasons.append(
-                                f"{cname} {metric} {cur}% < {thr[key]}% (作用域内)"
-                            )
-                            class_ok = False
-                            metric_fail[metric] = True
-                if class_ok:
-                    scope_covered += 1
-            # baseline 首次运行：写当前作用域内 class 覆盖率快照
-            if baseline_first_run:
-                assert baseline is not None, "首次运行必有 baseline 路径"
-                snap: dict[str, dict] = {}
-                for c in scope_classes:
-                    cname = c.get("name", "?")
-                    entry = {
-                        m: c.get(m) for m in _METRIC_THRESHOLD_MAP if c.get(m) is not None
-                    }
-                    if entry:
-                        snap[cname] = entry
-                bp = Path(baseline)
-                bp.parent.mkdir(parents=True, exist_ok=True)
-                bp.write_text(json.dumps(snap, ensure_ascii=False, indent=2), encoding="utf-8")
-            # threshold_results 补 coverage 5 项（聚合值展示 + 作用域判定结果汇总）
-            for metric, key in _METRIC_THRESHOLD_MAP.items():
-                threshold_results.append({
-                    "metric": metric,
-                    "actual": coverage[_COVERAGE_KEY_MAP[metric]],
-                    "threshold": thr[key],
-                    "pass": (not metric_fail[metric]) and scope_total > 0,
-                })
-        # spec 覆盖率判定（full 模式共用，作用域不作用于 spec 判定）
+        # spec 覆盖率判定（full 模式共用）
         spec_actual = spec_coverage.get("coverage_percent", 0)
         spec_pass = spec_actual >= thr["spec_rule_coverage_min"]
         threshold_results.append({
@@ -928,7 +829,7 @@ def run(inputs: dict) -> dict:
         existing_md = gate_result_path.read_text(encoding="utf-8")
     except OSError:
         existing_md = ""
-    if re.search(r"^##\s+AI 交叉验证（SOFT，不影响判定）\s*$", existing_md, re.MULTILINE):
+    if _SOFT_HEADER_RE.search(existing_md):
         soft_missing = False
     if soft_missing:
         print(
@@ -951,27 +852,33 @@ def run(inputs: dict) -> dict:
         "adversarial_coverage": adversarial_coverage,
         "threshold_results": threshold_results,
         "fail_reasons": fail_reasons,
-        # v0.6 新增字段
+        # v0.6 字段
         "degraded_reason": degraded_reason,
-        "suggestion": suggestion,
-        "located_module": located_module,
         "soft_missing": soft_missing,
-        "coverage_scope": scope_desc,
-        "scope_total": scope_total,
-        "scope_covered": scope_covered,
-        "scope_outside_total": scope_outside_total,
         "unspec_codes_count": len(unspec_codes),
-        "baseline_file": baseline or "",
-        "mvn_dir": mvn_dir,
+        "diff_coverage": diff_coverage,
+        "diff_threshold": diff_threshold,
     }
 
     # 步骤 8：脚本直接写 gate-result.md（--check-only 不写）
+    # v0.6 5.2 流程闭环：写前保留旧文件中 AI 手写的 SOFT 交叉验证段——把标题行
+    # 及其后全部旧内容追加到新生成内容末尾（前面补空行分隔）。脚本自身永不写该
+    # 标题，故追加段以标题行开头，重跑时只读判定仍能识别（soft_missing=False
+    # 稳定，AI 补段后重跑即消 WARN，且 AI 段不被全量覆盖抹掉）。无旧 SOFT 段不追加。
     if not check_only:
         out_dir = Path(feature_dir) / "docs"
         out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / "gate-result.md").write_text(
-            _format_gate_result_md(result), encoding="utf-8"
-        )
+        new_md = _format_gate_result_md(result)
+        try:
+            old_md = (out_dir / "gate-result.md").read_text(encoding="utf-8")
+        except OSError:
+            old_md = ""
+        soft_tail_match = _SOFT_HEADER_RE.search(old_md)
+        if soft_tail_match:
+            soft_tail = old_md[soft_tail_match.start():].rstrip()
+            if soft_tail:
+                new_md = new_md.rstrip() + "\n\n" + soft_tail + "\n"
+        (out_dir / "gate-result.md").write_text(new_md, encoding="utf-8")
 
     return result
 
@@ -1010,16 +917,15 @@ def main() -> int:
     parser.add_argument("--feature-dir", required=True, help="feature 目录（如 specs/001-bank-transfer）")
     parser.add_argument("--config", required=True, help="testing-config.yml 路径")
     parser.add_argument("--check-only", action="store_true", help="只跑步骤 1-7，不写 gate-result.md")
-    parser.add_argument("--auto-locate", action="store_true", help="v0.6 9.2：唯一候选模块自动采用（CI 用）")
     parser.add_argument(
-        "--coverage-scope",
+        "--diff-threshold",
         default=None,
-        help="v0.6 9.4：覆盖率判定作用域 auto | <pkg,...> | all（默认取 config gate.coverage_scope，再缺省 auto）",
+        help="变更行覆盖率阈值（%%），默认取 config gate.diff_coverage_threshold（缺省 80）",
     )
     parser.add_argument(
-        "--baseline",
+        "--diff-base",
         default=None,
-        help="v0.6 9.4：baseline 快照文件（作用域内类覆盖率增量退化判定；与 coverage_scope=all 互斥）",
+        help="MR 对比分支（git merge-base 定位 base）；默认取 config gate.diff_base，空=工作区 vs HEAD",
     )
     parser.add_argument("--json", action="store_true", help="输出判定 JSON 到 stdout（固定开启）")
     args = parser.parse_args()
@@ -1027,85 +933,50 @@ def main() -> int:
     feature_dir = Path(args.feature_dir)
     impact_ok = (feature_dir / "docs" / "impact-report.md").is_file()
 
-    # 配置读取：coverage_scope 默认值 + scan 排除模式
-    cfg = _load_config(Path(args.config))
-    gate_cfg = cfg.get("gate", {}) if isinstance(cfg.get("gate"), dict) else {}
-    coverage_scope = args.coverage_scope or gate_cfg.get("coverage_scope") or "auto"
-    baseline = args.baseline or gate_cfg.get("baseline_file") or None
-    # 互斥校验（文档 6.4）：--baseline 与 coverage_scope=all 不能同时启用
-    if baseline and coverage_scope == "all":
-        print(
-            "错误: --baseline 与 coverage_scope=all 互斥（文档 6.4：all 已全量，"
-            "无需 baseline 增量判定）",
-            file=sys.stderr,
-        )
-        return 2
-
-    # v0.6 4.1/9.2：环境收集（模块定位替代旧降级判定）——三语言共享的唯一实现
-    env = collect_environment(args.project, args.auto_locate)
+    # 环境收集（v0.6 降级判定）：AI 负责传对 --project（含 pom.xml 的模块目录）
+    env = collect_environment(args.project)
     degraded = env["degraded"]
-    mvn_dir = env["mvn_dir"]
-    root_has_pom = (Path(args.project) / "pom.xml").is_file()
-    if not degraded and not root_has_pom and env["located_module"] is None:
-        # ambiguous：多候选 -> 用法错误（exit 2），不产 gate 结果
-        print(env["suggestion"], file=sys.stderr)
-        return 2
 
     mvn_status = "SKIPPED"
     scan_stack = None
     parse_results = None
     scripts_dir = Path(__file__).resolve().parent
 
-    # 步骤 1：mvn clean test（强制 clean；v0.6 仅在 root 有 pom 或 auto-locate
-    # 唯一候选时执行，cwd=mvn_dir；其余非降级路径 mvn_status 保持 SKIPPED）
-    run_mvn = not degraded and (
-        root_has_pom or (args.auto_locate and env["located_module"] is not None)
-    )
-    if run_mvn:
+    # 步骤 1：mvn clean test（强制 clean；非降级即在 --project 目录执行）
+    if not degraded:
         try:
             proc = subprocess.run(
                 ["mvn", "clean", "test"],
-                cwd=mvn_dir,
+                cwd=args.project,
                 capture_output=True, text=True, timeout=1800,
             )
             mvn_status = "SUCCESS" if proc.returncode == 0 else "FAIL"
         except (OSError, subprocess.TimeoutExpired):
             mvn_status = "FAIL"
 
-    # 步骤 2/3：技术栈 + 测试结果（报告路径基于 mvn_dir 的 target/）
+    # 步骤 2/3：技术栈 + 测试结果（报告路径基于 --project 的 target/）
     if not degraded:
         scan_stack = _call_script(
             scripts_dir / "scan_test_stack.py",
             ["--source", args.test_source, "--json"],
         )
-        surefire = str(Path(mvn_dir) / "target" / "surefire-reports")
-        jacoco = str(Path(mvn_dir) / "target" / "site" / "jacoco" / "jacoco.xml")
+        surefire = str(Path(args.project) / "target" / "surefire-reports")
+        jacoco = str(Path(args.project) / "target" / "site" / "jacoco" / "jacoco.xml")
         parse_results = _call_script(
             scripts_dir / "parse_test_results.py",
             ["--surefire", surefire, "--jacoco", jacoco, "--json"],
         )
 
-    # 步骤 4：@Spec 扫描（full 与 degraded 都执行；v0.6 9.6 透传 test-source 与
-    # scan.unspec_exclude_patterns 额外排除模式）
-    scan_cfg = cfg.get("scan", {}) if isinstance(cfg.get("scan"), dict) else {}
-    patterns = scan_cfg.get("unspec_exclude_patterns", [])
-    if isinstance(patterns, str):
-        patterns = [
-            p.strip()
-            for p in patterns.strip("[]").replace('"', "").replace("'", "").split(",")
-            if p.strip()
-        ]
-    elif not isinstance(patterns, list):
-        patterns = []
-    exclude_arg = ",".join(patterns)
+    # 步骤 4：@Spec 扫描（full 与 degraded 都执行；v0.6 9.6 透传 test-source；
+    # scan.unspec_exclude_patterns 排除模式由 scan 自己读 config——--config 透传，
+    # 消除重复解析，三语言行为一致）
     scan_spec_args = [
         "--source", args.source,
         "--spec", args.spec,
         "--test-source", args.test_source,
+        "--config", args.config,
         "--json",
     ]
-    if exclude_arg:
-        scan_spec_args += ["--exclude-patterns", exclude_arg]
     scan_spec = _call_script(scripts_dir / "scan_spec_annotations.py", scan_spec_args)
 
     inputs = {
@@ -1122,14 +993,10 @@ def main() -> int:
         "scan_stack": scan_stack,
         "parse_results": parse_results,
         "scan_spec": scan_spec,
-        # v0.6 新增
-        "auto_locate": args.auto_locate,
-        "coverage_scope": coverage_scope,
-        "baseline": baseline,
-        "located_module": env["located_module"],
+        # v0.6 diff coverage（CLI 可覆盖，run() 内回落 config）
+        "diff_threshold": args.diff_threshold,
+        "diff_base": args.diff_base,
         "degraded_reason": env["degraded_reason"],
-        "suggestion": env["suggestion"],
-        "mvn_dir": mvn_dir,
     }
     result = run(inputs)
     print(json.dumps(result, ensure_ascii=False, indent=2))

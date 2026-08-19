@@ -29,6 +29,9 @@
 #       [--auto-locate] [--coverage-scope <auto|pkg,...|all>] [--baseline <file>] \
 #       [--check-only] --json
 
+# DEPRECATED (beta 阶段)：本脚本已弃用，仅保留供参考，不再维护。
+# 当前只维护 scripts/python/ 下的唯一实现；行为可能与 python 版漂移。
+
 set -euo pipefail
 
 SOURCE=""
@@ -38,7 +41,7 @@ PROJECT=""
 FEATURE_DIR=""
 CONFIG=""
 AUTO_LOCATE=0
-COVERAGE_SCOPE="auto"
+COVERAGE_SCOPE=""
 BASELINE=""
 CHECK_ONLY=0
 JSON=0
@@ -165,7 +168,7 @@ if [[ "$DEGRADED" == "0" ]]; then
         --surefire "$MVN_DIR/target/surefire-reports" \
         --jacoco "$MVN_DIR/target/site/jacoco/jacoco.xml" --json 2>/dev/null) || RESULTS_JSON=""
 fi
-SPEC_JSON=$(bash "$SCRIPT_DIR/scan-spec-annotations.sh" --source "$SOURCE" --spec "$SPEC" --test-source "$TEST_SOURCE" --json 2>/dev/null) || SPEC_JSON=""
+SPEC_JSON=$(bash "$SCRIPT_DIR/scan-spec-annotations.sh" --source "$SOURCE" --spec "$SPEC" --test-source "$TEST_SOURCE" --config "$CONFIG" --json 2>/dev/null) || SPEC_JSON=""
 
 # ── JSON 序列化 + 确定性核心：python3 -c 导入 run_gate 兜底 ─────────────
 # 与 Python 版字节级等价（同一 run() 实现）。
@@ -202,7 +205,7 @@ inputs = {
     "parse_results": _json_or_none(_a(13)),
     "scan_spec": _json_or_none(_a(14)),
     "auto_locate": _a(15) == "1",
-    "coverage_scope": _a(16) or "auto",
+    "coverage_scope": _a(16),
     "baseline": _a(17),
     "located_module": _a(18) or None,
     "degraded_reason": _a(19),

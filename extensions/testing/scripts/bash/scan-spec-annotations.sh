@@ -13,7 +13,11 @@
 # python 不可用时 stderr 报错 exit 3。
 #
 # 用法: scan-spec-annotations.sh --source <java_dir> --spec <spec.md> \
-#       [--test-source <test_dir>] [--exclude-patterns <逗号分隔>] --json
+#       [--test-source <test_dir>] [--exclude-patterns <逗号分隔>] \
+#       [--config <testing-config.yml>] --json
+
+# DEPRECATED (beta 阶段)：本脚本已弃用，仅保留供参考，不再维护。
+# 当前只维护 scripts/python/ 下的唯一实现；行为可能与 python 版漂移。
 
 set -euo pipefail
 
@@ -21,6 +25,7 @@ SOURCE=""
 SPEC=""
 TEST_SOURCE=""
 EXCLUDE_PATTERNS=""
+CONFIG=""
 JSON=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -28,13 +33,14 @@ while [[ $# -gt 0 ]]; do
         --spec)             SPEC="$2"; shift 2;;
         --test-source)      TEST_SOURCE="$2"; shift 2;;
         --exclude-patterns) EXCLUDE_PATTERNS="$2"; shift 2;;
+        --config)           CONFIG="$2"; shift 2;;
         --json)             JSON=1; shift;;
-        *) echo "用法: $0 --source <java_dir> --spec <spec.md> [--test-source <test_dir>] [--exclude-patterns <逗号分隔>] --json" >&2; exit 2;;
+        *) echo "用法: $0 --source <java_dir> --spec <spec.md> [--test-source <test_dir>] [--exclude-patterns <逗号分隔>] [--config <testing-config.yml>] --json" >&2; exit 2;;
     esac
 done
 
 if [[ -z "$SOURCE" || -z "$SPEC" ]]; then
-    echo "用法: $0 --source <java_dir> --spec <spec.md> [--test-source <test_dir>] [--exclude-patterns <逗号分隔>] --json" >&2
+    echo "用法: $0 --source <java_dir> --spec <spec.md> [--test-source <test_dir>] [--exclude-patterns <逗号分隔>] [--config <testing-config.yml>] --json" >&2
     exit 2
 fi
 if [[ ! -d "$SOURCE" ]]; then
@@ -58,6 +64,9 @@ if [[ -n "$TEST_SOURCE" ]]; then
 fi
 if [[ -n "$EXCLUDE_PATTERNS" ]]; then
     ARGS+=(--exclude-patterns "$EXCLUDE_PATTERNS")
+fi
+if [[ -n "$CONFIG" ]]; then
+    ARGS+=(--config "$CONFIG")
 fi
 ARGS+=(--json)
 

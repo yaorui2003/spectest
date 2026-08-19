@@ -1,29 +1,33 @@
-"""T029: @Spec 注解扫描脚本三语言等价性补充测试。
+"""T029: @Spec 注解扫描脚本 Python 实现契约测试。
 
-本测试为 ``test_scan_spec_annotations.py`` 中基础等价性测试的**补充**，
-覆盖更多场景的 Python vs bash（+ PowerShell）字节级等价性校验：
+**beta 阶段只维护 Python 实现**：sh/ps 脚本已弃用（保留文件但不再维护、
+不再测试），三语言字节级 parity 已无意义。本文件只测 Python 实现的核心
+契约（scan 输出键、unspec_codes 语义、Javadoc 幻影 fixture、@Repeatable、
+parse_test_results / run_gate 输出字段等）。
 
-- (a) 单文件全覆盖（R1-R7 全注解）：验证基础场景三语言一致
+覆盖场景（均为纯 Python 断言）：
+
+- (a) 单文件全覆盖（R1-R7 全注解）：验证基础场景输出正确
 - (b) 多文件（AccountService.java + ZService.java）：验证文件遍历排序一致
-  （Python ``sorted(rglob)`` vs bash ``find | sort``）
-- (c) 空目录边界（无 .java，spec.md 有规则 -> unimplemented_rules 全部）：
-  验证无源文件时三语言输出一致
-
-PowerShell 测试在 ``shutil.which("pwsh")`` 返回 None 时 skip
-（与 ``test_scan_spec_annotations.py`` 一致）。
+  （Python ``sorted(rglob)``）
+- (c) 空目录边界（无 .java，spec.md 有规则 -> unimplemented_rules 全部）
+- (d) @Repeatable @Spec 堆叠（Bug #6）
+- (e) 类级 @Spec / 同一行 @Spec+方法签名（F7）
+- (f) Javadoc 幻影（注释跳过状态机，修发现 A）
+- (g) 多分隔符标题（business_rules 量词补 +，修 F4）
+- (h) UNSPEC_CODE 漂移检测（9.6，T1 结构性 MEDIUM）
+- (i) validate_spec_format / parse_test_results / scan_test_stack / run_gate
+  Python 实现契约
 """
 
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
-
-from tests.conftest import requires_bash
 
 # 仓库根：tests/extensions/test_scan_script_parity.py -> parents[2] = spec-kit/
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -31,18 +35,8 @@ PY_SCRIPT = (
     PROJECT_ROOT / "extensions" / "testing" / "scripts" / "python"
     / "scan_spec_annotations.py"
 )
-SH_SCRIPT = (
-    PROJECT_ROOT / "extensions" / "testing" / "scripts" / "bash"
-    / "scan-spec-annotations.sh"
-)
-PS_SCRIPT = (
-    PROJECT_ROOT / "extensions" / "testing" / "scripts" / "powershell"
-    / "scan-spec-annotations.ps1"
-)
 
-HAS_PWSH = shutil.which("pwsh") is not None
-
-# spec.md 内容（含 R1-R7 business rules，三场景共用）
+# spec.md 内容（含 R1-R7 business rules，多场景共用）
 SPEC_MD = """\
 # Transfer
 
@@ -93,60 +87,6 @@ def _run_py(
         f"stdout: {result.stdout}\nstderr: {result.stderr}"
     )
     return result.stdout
-
-
-def _run_sh(
-    source_dir: Path,
-    spec_path: Path,
-    test_source: Path | None = None,
-    exclude_patterns: str = "",
-) -> str:
-    """调用 bash 扫描脚本，返回原始 stdout 字符串。"""
-    cmd = ["bash", str(SH_SCRIPT),
-           "--source", str(source_dir),
-           "--spec", str(spec_path)]
-    if test_source is not None:
-        cmd += ["--test-source", str(test_source)]
-    if exclude_patterns:
-        cmd += ["--exclude-patterns", exclude_patterns]
-    cmd += ["--json"]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-    assert result.returncode == 0, (
-        f"bash 扫描脚本退出码 {result.returncode}\n"
-        f"stdout: {result.stdout}\nstderr: {result.stderr}"
-    )
-    return result.stdout
-
-
-def _run_ps(
-    source_dir: Path,
-    spec_path: Path,
-    test_source: Path | None = None,
-    exclude_patterns: str = "",
-) -> str:
-    """调用 PowerShell 扫描脚本，返回原始 stdout 字符串。"""
-    cmd = ["pwsh", "-NoProfile", "-File", str(PS_SCRIPT),
-           "-Source", str(source_dir),
-           "-Spec", str(spec_path)]
-    if test_source is not None:
-        cmd += ["-TestSource", str(test_source)]
-    if exclude_patterns:
-        cmd += ["-ExcludePatterns", exclude_patterns]
-    cmd += ["-Json"]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-    assert result.returncode == 0, (
-        f"ps1 扫描脚本退出码 {result.returncode}\n"
-        f"stdout: {result.stdout}\nstderr: {result.stderr}"
-    )
-    return result.stdout
-
-
-def _assert_parity(py_out: str, other_out: str, scenario: str, other_name: str) -> None:
-    """断言 Python 与另一脚本输出字节级一致。"""
-    assert py_out == other_out, (
-        f"[{scenario}] Python 与 {other_name} 输出不一致:\n"
-        f"--- py ---\n{py_out}\n--- {other_name} ---\n{other_out}"
-    )
 
 
 # ── Java 样本生成 ──────────────────────────────────────────────────────────
@@ -200,7 +140,7 @@ def _make_account_service_java() -> str:
     """生成 AccountService.java（含 R1, R2, R6, R7 注解）。
 
     文件名以 A 开头，排序时位于 ZService 之前，用于验证
-    Python ``sorted(rglob)`` 与 bash ``find | sort`` 排序一致。
+    Python ``sorted(rglob)`` 排序一致。
     """
     return """\
 package com.example;
@@ -233,7 +173,7 @@ def _make_z_service_java() -> str:
     """生成 ZService.java（含 R3, R4, R5 注解）。
 
     文件名以 Z 开头，排序时位于 AccountService 之后，用于验证
-    Python ``sorted(rglob)`` 与 bash ``find | sort`` 排序一致。
+    Python ``sorted(rglob)`` 排序一致。
     """
     return """\
 package com.example;
@@ -262,7 +202,7 @@ def _make_repeatable_java() -> str:
     """生成 @Repeatable @Spec 堆叠的 AccountService.java（试点场景）。
 
     R1-R7 全部堆叠在同一个 transfer() 方法上（逐行连续），用于验证
-    bash/ps 不再丢弃中间的 @Spec（Bug #6：p_rule/p_cap 单标量被后一条
+    Python 不丢弃中间的 @Spec（Bug #6：p_rule/p_cap 单标量被后一条
     覆盖，此前 bash 只产出最后一条）。
     """
     return """\
@@ -304,14 +244,12 @@ def _make_fixture(tmp_path: Path) -> tuple[Path, Path]:
 # ── 用例 (a): 单文件全覆盖 ────────────────────────────────────────────────
 
 
-@requires_bash
-@pytest.mark.skipif(not SH_SCRIPT.exists(), reason="bash 扫描脚本尚未实现")
-def test_parity_single_file_full(tmp_path: Path):
-    """单文件全覆盖（R1-R7 全注解）：Python 与 bash 输出字节级一致。
+def test_scan_single_file_full(tmp_path: Path):
+    """单文件全覆盖（R1-R7 全注解）：Python 输出内容正确。
 
     场景：AccountService.java 含 R1-R7 全部 @Spec 注解，
     spec.md 含 R1-R7 全部 business_rules。
-    预期：coverage 100%，无 unimplemented/orphan，三语言输出一致。
+    预期：coverage 100%，无 unimplemented/orphan，无 UNSPEC_CODE 漂移。
     """
     src_dir, spec_path = _make_fixture(tmp_path)
     (src_dir / "AccountService.java").write_text(
@@ -319,10 +257,6 @@ def test_parity_single_file_full(tmp_path: Path):
     )
 
     py_out = _run_py(src_dir, spec_path)
-    sh_out = _run_sh(src_dir, spec_path)
-    _assert_parity(py_out, sh_out, "单文件全覆盖", "bash")
-
-    # 同时验证输出内容正确（覆盖率 100%，无遗漏/孤儿/漂移）
     data = json.loads(py_out)
     assert data["coverage_percent"] == 100
     assert data["unimplemented_rules"] == []
@@ -332,26 +266,10 @@ def test_parity_single_file_full(tmp_path: Path):
     assert data["unspec_codes"] == []
 
 
-@pytest.mark.skipif(not HAS_PWSH, reason="pwsh 不可用")
-@pytest.mark.skipif(not PS_SCRIPT.exists(), reason="ps1 扫描脚本尚未实现")
-def test_parity_single_file_full_ps(tmp_path: Path):
-    """单文件全覆盖：Python 与 PowerShell 输出字节级一致。"""
-    src_dir, spec_path = _make_fixture(tmp_path)
-    (src_dir / "AccountService.java").write_text(
-        _make_full_coverage_java(), encoding="utf-8"
-    )
-
-    py_out = _run_py(src_dir, spec_path)
-    ps_out = _run_ps(src_dir, spec_path)
-    _assert_parity(py_out, ps_out, "单文件全覆盖", "pwsh")
-
-
 # ── 用例 (b): 多文件排序一致 ──────────────────────────────────────────────
 
 
-@requires_bash
-@pytest.mark.skipif(not SH_SCRIPT.exists(), reason="bash 扫描脚本尚未实现")
-def test_parity_multi_file_sorted(tmp_path: Path):
+def test_scan_multi_file_sorted(tmp_path: Path):
     """多文件（AccountService.java + ZService.java）：验证排序一致。
 
     场景：两个 .java 文件分别含部分规则注解：
@@ -359,9 +277,7 @@ def test_parity_multi_file_sorted(tmp_path: Path):
     - ZService.java：R3, R4, R5
 
     Python 用 ``sorted(source_dir.rglob("*.java"))`` 遍历文件，
-    bash 用 ``find "$SOURCE" -name '*.java' | LC_ALL=C sort`` 遍历。
-    两者排序结果应一致（AccountService 在前，ZService 在后），
-    输出 annotations 数组顺序一致，最终 stdout 字节级等价。
+    AccountService 在前，ZService 在后，annotations 数组顺序一致。
     """
     src_dir, spec_path = _make_fixture(tmp_path)
     (src_dir / "AccountService.java").write_text(
@@ -372,11 +288,8 @@ def test_parity_multi_file_sorted(tmp_path: Path):
     )
 
     py_out = _run_py(src_dir, spec_path)
-    sh_out = _run_sh(src_dir, spec_path)
-    _assert_parity(py_out, sh_out, "多文件排序", "bash")
-
-    # 验证排序：AccountService 的注解全部在 ZService 之前
     data = json.loads(py_out)
+    # 验证排序：AccountService 的注解全部在 ZService 之前
     locations = [ann["location"] for ann in data["annotations"]]
     account_locs = [loc for loc in locations if "AccountService" in loc]
     zservice_locs = [loc for loc in locations if "ZService" in loc]
@@ -390,29 +303,10 @@ def test_parity_multi_file_sorted(tmp_path: Path):
     assert len(data["annotations"]) == 7
 
 
-@pytest.mark.skipif(not HAS_PWSH, reason="pwsh 不可用")
-@pytest.mark.skipif(not PS_SCRIPT.exists(), reason="ps1 扫描脚本尚未实现")
-def test_parity_multi_file_sorted_ps(tmp_path: Path):
-    """多文件排序：Python 与 PowerShell 输出字节级一致。"""
-    src_dir, spec_path = _make_fixture(tmp_path)
-    (src_dir / "AccountService.java").write_text(
-        _make_account_service_java(), encoding="utf-8"
-    )
-    (src_dir / "ZService.java").write_text(
-        _make_z_service_java(), encoding="utf-8"
-    )
-
-    py_out = _run_py(src_dir, spec_path)
-    ps_out = _run_ps(src_dir, spec_path)
-    _assert_parity(py_out, ps_out, "多文件排序", "pwsh")
-
-
 # ── 用例 (c): 空目录边界 ──────────────────────────────────────────────────
 
 
-@requires_bash
-@pytest.mark.skipif(not SH_SCRIPT.exists(), reason="bash 扫描脚本尚未实现")
-def test_parity_empty_dir(tmp_path: Path):
+def test_scan_empty_dir(tmp_path: Path):
     """空目录边界（无 .java，spec.md 有规则 -> unimplemented_rules 全部）。
 
     场景：src/ 目录存在但无任何 .java 文件，spec.md 含 R1-R7。
@@ -422,16 +316,11 @@ def test_parity_empty_dir(tmp_path: Path):
     - unimplemented_rules == ["R1", "R2", ..., "R7"]（全部规则未实现）
     - orphan_annotations 为空
     - coverage_percent == 0
-    - Python 与 bash 输出字节级一致
     """
     src_dir, spec_path = _make_fixture(tmp_path)
     # src_dir 已创建但为空，不写入任何 .java 文件
 
     py_out = _run_py(src_dir, spec_path)
-    sh_out = _run_sh(src_dir, spec_path)
-    _assert_parity(py_out, sh_out, "空目录边界", "bash")
-
-    # 验证输出内容正确
     data = json.loads(py_out)
     assert data["annotations"] == []
     assert data["annotated_rules"] == {}
@@ -442,30 +331,15 @@ def test_parity_empty_dir(tmp_path: Path):
     assert data["unspec_codes"] == []
 
 
-@pytest.mark.skipif(not HAS_PWSH, reason="pwsh 不可用")
-@pytest.mark.skipif(not PS_SCRIPT.exists(), reason="ps1 扫描脚本尚未实现")
-def test_parity_empty_dir_ps(tmp_path: Path):
-    """空目录边界：Python 与 PowerShell 输出字节级一致。"""
-    src_dir, spec_path = _make_fixture(tmp_path)
-    # src_dir 已创建但为空
-
-    py_out = _run_py(src_dir, spec_path)
-    ps_out = _run_ps(src_dir, spec_path)
-    _assert_parity(py_out, ps_out, "空目录边界", "pwsh")
-
-
 # ── 用例 (d): @Repeatable @Spec 堆叠 ─────────────────────────────────────
 
 
-@requires_bash
-@pytest.mark.skipif(not SH_SCRIPT.exists(), reason="bash 扫描脚本尚未实现")
-def test_parity_repeatable_spec_sh(tmp_path: Path):
-    """@Repeatable @Spec 堆叠：Python 与 bash 输出字节级一致（Bug #6）。
+def test_scan_repeatable_spec(tmp_path: Path):
+    """@Repeatable @Spec 堆叠：Python 逐条保留（Bug #6）。
 
     场景：R1-R7 全部堆叠在同一个 transfer() 方法上（试点场景）。
     修复前 bash 用单标量 p_rule/p_cap 存 pending，只保留最后一条 @Spec
-    （1 条注解 / coverage 29%）；修复后应逐条保留（7 条 / coverage 100%），
-    且与 Python 输出字节级一致。
+    （1 条注解 / coverage 29%）；Python 应逐条保留（7 条 / coverage 100%）。
     """
     src_dir, spec_path = _make_fixture(tmp_path)
     (src_dir / "AccountService.java").write_text(
@@ -473,31 +347,14 @@ def test_parity_repeatable_spec_sh(tmp_path: Path):
     )
 
     py_out = _run_py(src_dir, spec_path)
-    sh_out = _run_sh(src_dir, spec_path)
-    _assert_parity(py_out, sh_out, "@Repeatable @Spec 堆叠", "bash")
-
-    # 内容校验：7 条注解全部指向 transfer()，coverage 100%，无遗漏/孤儿
     data = json.loads(py_out)
+    # 内容校验：7 条注解全部指向 transfer()，coverage 100%，无遗漏/孤儿
     assert len(data["annotations"]) == 7
     for ann in data["annotations"]:
         assert ann["location"].startswith("com.example.AccountService.transfer:")
     assert data["coverage_percent"] == 100
     assert data["unimplemented_rules"] == []
     assert data["orphan_annotations"] == []
-
-
-@pytest.mark.skipif(not HAS_PWSH, reason="pwsh 不可用")
-@pytest.mark.skipif(not PS_SCRIPT.exists(), reason="ps1 扫描脚本尚未实现")
-def test_parity_repeatable_spec_ps(tmp_path: Path):
-    """@Repeatable @Spec 堆叠：Python 与 PowerShell 输出字节级一致（Bug #6）。"""
-    src_dir, spec_path = _make_fixture(tmp_path)
-    (src_dir / "AccountService.java").write_text(
-        _make_repeatable_java(), encoding="utf-8"
-    )
-
-    py_out = _run_py(src_dir, spec_path)
-    ps_out = _run_ps(src_dir, spec_path)
-    _assert_parity(py_out, ps_out, "@Repeatable @Spec 堆叠", "pwsh")
 
 
 # ── 用例 (e): 类级 @Spec（无方法签名行跟随，类名兜底） ─────────────────────
@@ -508,9 +365,8 @@ def _make_class_level_java() -> str:
 
     @Spec 直接标在类声明行上，类内方法均为包私有（无 public/protected/
     private 访问修饰符）——不匹配方法签名模式，pending 直到文件末尾仍残留，
-    三语言须用类名兜底（与 Python 的 ``None -> class_name`` 一致）：
+    Python 用类名兜底（``None -> class_name``）：
     location = com.example.OrderService.OrderService:<@Spec 行号>。
-    修复前 bash/ps 无文件末尾兜底 -> 0 条注解 / 0%。
     """
     return """\
 package com.example;
@@ -532,9 +388,8 @@ public class OrderService {
 def _make_same_line_java() -> str:
     """生成同一行 @Spec + 方法签名的 CancelService.java（F7 修复点 2）。
 
-    @Spec 与 ``public void cancel()`` 在同一行——旧 bash/ps 的 flush 条件
-    （跳过 @ 开头行）会丢弃该 @Spec；修复后应在该行立即解析出方法名 cancel。
-    location = com.example.CancelService.cancel:<@Spec 行号>。
+    @Spec 与 ``public void cancel()`` 在同一行——应在该行立即解析出方法名
+    cancel。location = com.example.CancelService.cancel:<@Spec 行号>。
     """
     return """\
 package com.example;
@@ -549,14 +404,12 @@ public class CancelService {
 """
 
 
-@requires_bash
-@pytest.mark.skipif(not SH_SCRIPT.exists(), reason="bash 扫描脚本尚未实现")
-def test_parity_class_level_spec_sh(tmp_path: Path):
-    """类级 @Spec（无方法签名行跟随）：Python 与 bash 字节级一致（F7）。
+def test_scan_class_level_spec(tmp_path: Path):
+    """类级 @Spec（无方法签名行跟随）：Python 类名兜底（F7）。
 
     场景：@Spec 标在类声明行，类内只有包私有方法（不匹配方法签名模式），
-    pending 直到文件末尾残留。修复前 bash 无 END 兜底 -> 0 条注解 / 0%；
-    修复后与 Python 一致：类名兜底（OrderService.OrderService）1 条 / 14%。
+    pending 直到文件末尾残留。Python 用类名兜底（OrderService.OrderService）
+    1 条 / 14%。
     """
     src_dir, spec_path = _make_fixture(tmp_path)
     (src_dir / "OrderService.java").write_text(
@@ -564,11 +417,8 @@ def test_parity_class_level_spec_sh(tmp_path: Path):
     )
 
     py_out = _run_py(src_dir, spec_path)
-    sh_out = _run_sh(src_dir, spec_path)
-    _assert_parity(py_out, sh_out, "类级 @Spec", "bash")
-
-    # 内容校验：类名兜底 1 条注解，coverage 14%，R2-R7 未实现
     data = json.loads(py_out)
+    # 内容校验：类名兜底 1 条注解，coverage 14%，R2-R7 未实现
     assert len(data["annotations"]) == 1
     assert data["annotations"][0]["location"] == "com.example.OrderService.OrderService:5"
     assert data["coverage_percent"] == round(1 / 7 * 100)  # 14
@@ -576,27 +426,11 @@ def test_parity_class_level_spec_sh(tmp_path: Path):
     assert data["orphan_annotations"] == []
 
 
-@pytest.mark.skipif(not HAS_PWSH, reason="pwsh 不可用")
-@pytest.mark.skipif(not PS_SCRIPT.exists(), reason="ps1 扫描脚本尚未实现")
-def test_parity_class_level_spec_ps(tmp_path: Path):
-    """类级 @Spec：Python 与 PowerShell 字节级一致（F7）。"""
-    src_dir, spec_path = _make_fixture(tmp_path)
-    (src_dir / "OrderService.java").write_text(
-        _make_class_level_java(), encoding="utf-8"
-    )
+def test_scan_same_line_spec(tmp_path: Path):
+    """同一行 @Spec + 方法签名：Python 立即解析方法名（F7）。
 
-    py_out = _run_py(src_dir, spec_path)
-    ps_out = _run_ps(src_dir, spec_path)
-    _assert_parity(py_out, ps_out, "类级 @Spec", "pwsh")
-
-
-@requires_bash
-@pytest.mark.skipif(not SH_SCRIPT.exists(), reason="bash 扫描脚本尚未实现")
-def test_parity_same_line_spec_sh(tmp_path: Path):
-    """同一行 @Spec + 方法签名：Python 与 bash 字节级一致（F7）。
-
-    场景：@Spec(...) public void cancel() 同一行。旧 bash flush 条件跳过
-    @ 开头行 -> 0 条注解 / 0%；修复后本行立即解析方法名 cancel（1 条 / 14%）。
+    场景：@Spec(...) public void cancel() 同一行。Python 本行立即解析
+    方法名 cancel（1 条 / 14%）。
     """
     src_dir, spec_path = _make_fixture(tmp_path)
     (src_dir / "CancelService.java").write_text(
@@ -604,30 +438,13 @@ def test_parity_same_line_spec_sh(tmp_path: Path):
     )
 
     py_out = _run_py(src_dir, spec_path)
-    sh_out = _run_sh(src_dir, spec_path)
-    _assert_parity(py_out, sh_out, "同一行 @Spec+方法", "bash")
-
-    # 内容校验：cancel 1 条注解，coverage 14%，R1/R3-R7 未实现
     data = json.loads(py_out)
+    # 内容校验：cancel 1 条注解，coverage 14%，R1/R3-R7 未实现
     assert len(data["annotations"]) == 1
     assert data["annotations"][0]["location"] == "com.example.CancelService.cancel:7"
     assert data["coverage_percent"] == round(1 / 7 * 100)  # 14
     assert data["unimplemented_rules"] == ["R1", "R3", "R4", "R5", "R6", "R7"]
     assert data["orphan_annotations"] == []
-
-
-@pytest.mark.skipif(not HAS_PWSH, reason="pwsh 不可用")
-@pytest.mark.skipif(not PS_SCRIPT.exists(), reason="ps1 扫描脚本尚未实现")
-def test_parity_same_line_spec_ps(tmp_path: Path):
-    """同一行 @Spec + 方法签名：Python 与 PowerShell 字节级一致（F7）。"""
-    src_dir, spec_path = _make_fixture(tmp_path)
-    (src_dir / "CancelService.java").write_text(
-        _make_same_line_java(), encoding="utf-8"
-    )
-
-    py_out = _run_py(src_dir, spec_path)
-    ps_out = _run_ps(src_dir, spec_path)
-    _assert_parity(py_out, ps_out, "同一行 @Spec+方法", "pwsh")
 
 
 # ── 用例 (f): Javadoc 幻影（注释跳过状态机，修发现 A） ──────────────────────
@@ -662,13 +479,11 @@ public class PhantomService {
 """
 
 
-@requires_bash
-@pytest.mark.skipif(not SH_SCRIPT.exists(), reason="bash 扫描脚本尚未实现")
-def test_parity_javadoc_phantom_sh(tmp_path: Path):
-    """Javadoc 幻影：Python 与 bash 字节级一致 + 注释内 @Spec 被跳过（发现 A）。
+def test_scan_javadoc_phantom(tmp_path: Path):
+    """Javadoc 幻影：注释内 @Spec 被跳过（发现 A）。
 
     场景：Javadoc 块注释含 R99 幻影、行注释含 R88 幻影，仅 R1 为真实注解。
-    修复前三语言把 R99/R88 误扫为幻影注解（orphan_annotations 污染）；
+    修复前把 R99/R88 误扫为幻影注解（orphan_annotations 污染）；
     修复后仅 1 条注解 / coverage 14%，orphan 为空。
     """
     src_dir, spec_path = _make_fixture(tmp_path)
@@ -677,11 +492,8 @@ def test_parity_javadoc_phantom_sh(tmp_path: Path):
     )
 
     py_out = _run_py(src_dir, spec_path)
-    sh_out = _run_sh(src_dir, spec_path)
-    _assert_parity(py_out, sh_out, "Javadoc 幻影", "bash")
-
-    # 内容断言：仅 R1 真实注解，R99/R88 不出现，coverage 14%（1/7）
     data = json.loads(py_out)
+    # 内容断言：仅 R1 真实注解，R99/R88 不出现，coverage 14%（1/7）
     assert len(data["annotations"]) == 1
     assert data["annotations"][0]["rule"] == "R1"
     assert data["annotations"][0]["location"] == "com.example.PhantomService.transfer:11"
@@ -690,20 +502,6 @@ def test_parity_javadoc_phantom_sh(tmp_path: Path):
     assert data["coverage_percent"] == round(1 / 7 * 100)  # 14
     assert data["unimplemented_rules"] == ["R2", "R3", "R4", "R5", "R6", "R7"]
     assert data["orphan_annotations"] == []
-
-
-@pytest.mark.skipif(not HAS_PWSH, reason="pwsh 不可用")
-@pytest.mark.skipif(not PS_SCRIPT.exists(), reason="ps1 扫描脚本尚未实现")
-def test_parity_javadoc_phantom_ps(tmp_path: Path):
-    """Javadoc 幻影：Python 与 PowerShell 字节级一致（发现 A）。"""
-    src_dir, spec_path = _make_fixture(tmp_path)
-    (src_dir / "PhantomService.java").write_text(
-        _make_javadoc_phantom_java(), encoding="utf-8"
-    )
-
-    py_out = _run_py(src_dir, spec_path)
-    ps_out = _run_ps(src_dir, spec_path)
-    _assert_parity(py_out, ps_out, "Javadoc 幻影", "pwsh")
 
 
 # ── 用例 (g): 多分隔符标题（business_rules 量词补 +，修 F4） ────────────────
@@ -761,38 +559,21 @@ def _make_multi_space_fixture(tmp_path: Path) -> tuple[Path, Path]:
     return src_dir, spec_path
 
 
-@requires_bash
-@pytest.mark.skipif(not SH_SCRIPT.exists(), reason="bash 扫描脚本尚未实现")
-def test_parity_multi_space_header_sh(tmp_path: Path):
-    """多分隔符标题（## Business  Rules 双空格）：Python 与 bash 字节级一致（F4）。
+def test_scan_multi_space_header(tmp_path: Path):
+    """多分隔符标题（## Business  Rules 双空格）：Python 正确识别（F4）。
 
-    场景：business_rules 章节标题用两个空格分隔 —— 修复前 bash/ps 的
-    ``business[\t _-]rules``（无 +）只匹配单个空格，漏识别章节 -> 0 规则；
-    修复后补 ``+`` 与 Python 的 ``[\\s_-]+`` 等价，正确识别 R1-R3 -> coverage 100%。
+    场景：business_rules 章节标题用两个空格分隔 —— Python 用
+    ``[\\s_-]+`` 匹配，正确识别 R1-R3 -> coverage 100%。
     """
     src_dir, spec_path = _make_multi_space_fixture(tmp_path)
 
     py_out = _run_py(src_dir, spec_path)
-    sh_out = _run_sh(src_dir, spec_path)
-    _assert_parity(py_out, sh_out, "多分隔符标题", "bash")
-
-    # 内容断言：R1-R3 全识别，coverage 100%
     data = json.loads(py_out)
+    # 内容断言：R1-R3 全识别，coverage 100%
     assert data["spec_rules"] == ["R1", "R2", "R3"]
     assert data["coverage_percent"] == 100
     assert data["unimplemented_rules"] == []
     assert data["orphan_annotations"] == []
-
-
-@pytest.mark.skipif(not HAS_PWSH, reason="pwsh 不可用")
-@pytest.mark.skipif(not PS_SCRIPT.exists(), reason="ps1 扫描脚本尚未实现")
-def test_parity_multi_space_header_ps(tmp_path: Path):
-    """多分隔符标题（## Business  Rules 双空格）：Python 与 PowerShell 字节级一致（F4）。"""
-    src_dir, spec_path = _make_multi_space_fixture(tmp_path)
-
-    py_out = _run_py(src_dir, spec_path)
-    ps_out = _run_ps(src_dir, spec_path)
-    _assert_parity(py_out, ps_out, "多分隔符标题", "pwsh")
 
 
 # ── 用例 (h): UNSPEC_CODE 漂移检测（9.6，T1 结构性 MEDIUM） ───────────────
@@ -961,10 +742,8 @@ def _make_unspec_exclude_fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
     return src_dir, test_dir, spec_path
 
 
-@requires_bash
-@pytest.mark.skipif(not SH_SCRIPT.exists(), reason="bash 扫描脚本尚未实现")
-def test_parity_unspec_codes_sh(tmp_path: Path):
-    """UNSPEC_CODE 漂移：Python 与 bash 字节级一致 + 三类判定正确（9.6）。
+def test_scan_unspec_codes(tmp_path: Path):
+    """UNSPEC_CODE 漂移：三类判定正确（9.6）。
 
     场景：业务类无 @Spec 且无测试引用（PaymentService）-> 告警完整类名
     com.example.PaymentService；DTO 类（dto 包段 OrderDto / entity 包段
@@ -974,11 +753,8 @@ def test_parity_unspec_codes_sh(tmp_path: Path):
     src_dir, spec_path = _make_unspec_fixture(tmp_path)
 
     py_out = _run_py(src_dir, spec_path)
-    sh_out = _run_sh(src_dir, spec_path)
-    _assert_parity(py_out, sh_out, "UNSPEC_CODE 漂移", "bash")
-
-    # 内容断言：仅 PaymentService 告警（完整类名），其余类全部排除
     data = json.loads(py_out)
+    # 内容断言：仅 PaymentService 告警（完整类名），其余类全部排除
     assert data["unspec_codes"] == ["com.example.PaymentService"]
     warned = {code.rsplit(".", 1)[-1] for code in data["unspec_codes"]}
     assert warned == {"PaymentService"}
@@ -986,67 +762,34 @@ def test_parity_unspec_codes_sh(tmp_path: Path):
         assert cls not in warned, f"{cls} 不应出现在 unspec_codes: {data['unspec_codes']}"
 
 
-@pytest.mark.skipif(not HAS_PWSH, reason="pwsh 不可用")
-@pytest.mark.skipif(not PS_SCRIPT.exists(), reason="ps1 扫描脚本尚未实现")
-def test_parity_unspec_codes_ps(tmp_path: Path):
-    """UNSPEC_CODE 漂移：Python 与 PowerShell 字节级一致（9.6）。"""
-    src_dir, spec_path = _make_unspec_fixture(tmp_path)
-
-    py_out = _run_py(src_dir, spec_path)
-    ps_out = _run_ps(src_dir, spec_path)
-    _assert_parity(py_out, ps_out, "UNSPEC_CODE 漂移", "pwsh")
-
-
-@requires_bash
-@pytest.mark.skipif(not SH_SCRIPT.exists(), reason="bash 扫描脚本尚未实现")
-def test_parity_unspec_exclusions_sh(tmp_path: Path):
+def test_scan_unspec_exclusions(tmp_path: Path):
     """UNSPEC_CODE 排除：--test-source 引用 + --exclude-patterns 追加生效（9.6）。
 
     场景：RefundService 被 RefundServiceTest 引用（传 --test-source 不告警）；
     legacy/FeeService 命中 --exclude-patterns "legacy"（追加排除不告警）。
-    预期无漂移（unspec_codes == []），Python 与 bash 字节级一致。
+    预期无漂移（unspec_codes == []）。
     """
     src_dir, test_dir, spec_path = _make_unspec_exclude_fixture(tmp_path)
 
     py_out = _run_py(src_dir, spec_path, test_source=test_dir, exclude_patterns="legacy")
-    sh_out = _run_sh(src_dir, spec_path, test_source=test_dir, exclude_patterns="legacy")
-    _assert_parity(py_out, sh_out, "UNSPEC_CODE 排除", "bash")
-
     data = json.loads(py_out)
     assert data["unspec_codes"] == []
 
 
-@pytest.mark.skipif(not HAS_PWSH, reason="pwsh 不可用")
-@pytest.mark.skipif(not PS_SCRIPT.exists(), reason="ps1 扫描脚本尚未实现")
-def test_parity_unspec_exclusions_ps(tmp_path: Path):
-    """UNSPEC_CODE 排除：Python 与 PowerShell 字节级一致（9.6）。"""
-    src_dir, test_dir, spec_path = _make_unspec_exclude_fixture(tmp_path)
-
-    py_out = _run_py(src_dir, spec_path, test_source=test_dir, exclude_patterns="legacy")
-    ps_out = _run_ps(src_dir, spec_path, test_source=test_dir, exclude_patterns="legacy")
-    _assert_parity(py_out, ps_out, "UNSPEC_CODE 排除", "pwsh")
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
-# v0.3 新增脚本 parity 测试：validate_spec_format / parse_test_results / scan_test_stack
+# 其他 Python 脚本契约：validate_spec_format / parse_test_results / scan_test_stack
+# / run_gate（beta 阶段只维护 Python 实现，直接断言 Python 输出）
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # ── 路径常量 ──────────────────────────────────────────────────────────────────
 
 _VSF_PY = PROJECT_ROOT / "extensions" / "testing" / "scripts" / "python" / "validate_spec_format.py"
-_VSF_SH = PROJECT_ROOT / "extensions" / "testing" / "scripts" / "bash" / "validate-spec-format.sh"
-_VSF_PS = PROJECT_ROOT / "extensions" / "testing" / "scripts" / "powershell" / "validate-spec-format.ps1"
-
 _PTR_PY = PROJECT_ROOT / "extensions" / "testing" / "scripts" / "python" / "parse_test_results.py"
-_PTR_SH = PROJECT_ROOT / "extensions" / "testing" / "scripts" / "bash" / "parse-test-results.sh"
-_PTR_PS = PROJECT_ROOT / "extensions" / "testing" / "scripts" / "powershell" / "parse-test-results.ps1"
-
 _STS_PY = PROJECT_ROOT / "extensions" / "testing" / "scripts" / "python" / "scan_test_stack.py"
-_STS_SH = PROJECT_ROOT / "extensions" / "testing" / "scripts" / "bash" / "scan-test-stack.sh"
-_STS_PS = PROJECT_ROOT / "extensions" / "testing" / "scripts" / "powershell" / "scan-test-stack.ps1"
+_RG_PY = PROJECT_ROOT / "extensions" / "testing" / "scripts" / "python" / "run_gate.py"
 
 
-# ── validate_spec_format parity ─────────────────────────────────────────────
+# ── validate_spec_format 契约 ─────────────────────────────────────────────
 
 _VSF_SPEC = """\
 # Transfer
@@ -1095,49 +838,17 @@ def _vsf_run_py(spec_path: Path) -> str:
     return r.stdout
 
 
-def _vsf_run_sh(spec_path: Path) -> str:
-    r = subprocess.run(
-        ["bash", str(_VSF_SH), "--spec", str(spec_path), "--json"],
-        capture_output=True, text=True, timeout=30)
-    assert r.returncode == 0, f"sh 退出码 {r.returncode}\n{r.stderr}"
-    return r.stdout
-
-
-def _vsf_run_ps(spec_path: Path) -> str:
-    r = subprocess.run(
-        ["pwsh", "-NoProfile", "-File", str(_VSF_PS),
-         "-Spec", str(spec_path), "-Json"],
-        capture_output=True, text=True, timeout=30)
-    assert r.returncode == 0, f"ps 退出码 {r.returncode}\n{r.stderr}"
-    return r.stdout
-
-
-@requires_bash
-@pytest.mark.skipif(not _VSF_SH.exists(), reason="validate-spec-format.sh 不存在")
-def test_parity_validate_spec_format_sh(tmp_path: Path):
-    """validate_spec_format: Python 与 bash 输出字节级一致。"""
+def test_validate_spec_format_py(tmp_path: Path):
+    """validate_spec_format: Python 输出契约（valid + error_codes_found）。"""
     spec = tmp_path / "spec.md"
     spec.write_text(_VSF_SPEC, encoding="utf-8")
-    py_out = _vsf_run_py(spec)
-    sh_out = _vsf_run_sh(spec)
-    _assert_parity(py_out, sh_out, "validate_spec_format", "bash")
+    data = json.loads(_vsf_run_py(spec))
+    assert data["valid"] is True
+    assert data["error_codes_found"] == ["INVALID_AMOUNT", "ACCOUNT_NOT_FOUND"]
 
 
-@pytest.mark.skipif(not HAS_PWSH, reason="pwsh 不可用")
-@pytest.mark.skipif(not _VSF_PS.exists(), reason="validate-spec-format.ps1 不存在")
-def test_parity_validate_spec_format_ps(tmp_path: Path):
-    """validate_spec_format: Python 与 PowerShell 输出字节级一致。"""
-    spec = tmp_path / "spec.md"
-    spec.write_text(_VSF_SPEC, encoding="utf-8")
-    py_out = _vsf_run_py(spec)
-    ps_out = _vsf_run_ps(spec)
-    _assert_parity(py_out, ps_out, "validate_spec_format", "pwsh")
-
-
-@requires_bash
-@pytest.mark.skipif(not _VSF_SH.exists(), reason="validate-spec-format.sh 不存在")
-def test_parity_validate_spec_format_noise_sh(tmp_path: Path):
-    """validate_spec_format 噪音场景：py 与 bash 字节级一致 + 内容干净（Bug #1）。
+def test_validate_spec_format_noise_py(tmp_path: Path):
+    """validate_spec_format 噪音场景：内容干净（Bug #1）。
 
     ECD 段含 HTML 注释行（OPTIONAL/API）、HTTP Status 列、Related Rule 列
     （R1..R7）、描述含全大写单词 -> error_codes_found 必须恰好等于
@@ -1145,28 +856,12 @@ def test_parity_validate_spec_format_noise_sh(tmp_path: Path):
     """
     spec = tmp_path / "spec.md"
     spec.write_text(_VSF_SPEC_NOISY, encoding="utf-8")
-    py_out = _vsf_run_py(spec)
-    sh_out = _vsf_run_sh(spec)
-    _assert_parity(py_out, sh_out, "validate_spec_format 噪音", "bash")
-
-    # 内容断言（不止 parity）：错误码集干净无噪音
-    data = json.loads(py_out)
+    data = json.loads(_vsf_run_py(spec))
     assert data["error_codes_found"] == ["INVALID_AMOUNT", "ACCOUNT_NOT_FOUND"]
     assert data["valid"] is True
 
 
-@pytest.mark.skipif(not HAS_PWSH, reason="pwsh 不可用")
-@pytest.mark.skipif(not _VSF_PS.exists(), reason="validate-spec-format.ps1 不存在")
-def test_parity_validate_spec_format_noise_ps(tmp_path: Path):
-    """validate_spec_format 噪音场景：py 与 PowerShell 字节级一致（Bug #1）。"""
-    spec = tmp_path / "spec.md"
-    spec.write_text(_VSF_SPEC_NOISY, encoding="utf-8")
-    py_out = _vsf_run_py(spec)
-    ps_out = _vsf_run_ps(spec)
-    _assert_parity(py_out, ps_out, "validate_spec_format 噪音", "pwsh")
-
-
-# ── parse_test_results parity ───────────────────────────────────────────────
+# ── parse_test_results 契约 ───────────────────────────────────────────────
 
 _PTR_SUREFIRE_XML = """\
 <?xml version="1.0" encoding="UTF-8"?>
@@ -1218,45 +913,27 @@ def _ptr_run_py(sf_dir: Path, jacoco: Path) -> str:
     return r.stdout
 
 
-def _ptr_run_sh(sf_dir: Path, jacoco: Path) -> str:
-    r = subprocess.run(
-        ["bash", str(_PTR_SH), "--surefire", str(sf_dir),
-         "--jacoco", str(jacoco), "--json"],
-        capture_output=True, text=True, timeout=30)
-    assert r.returncode == 0, f"sh 退出码 {r.returncode}\n{r.stderr}"
-    return r.stdout
+def test_parse_test_results_py(tmp_path: Path):
+    """parse_test_results: Python 输出契约（unit/contract/coverage/source_lines）。
 
-
-def _ptr_run_ps(sf_dir: Path, jacoco: Path) -> str:
-    r = subprocess.run(
-        ["pwsh", "-NoProfile", "-File", str(_PTR_PS),
-         "-Surefire", str(sf_dir), "-Jacoco", str(jacoco), "-Json"],
-        capture_output=True, text=True, timeout=30)
-    assert r.returncode == 0, f"ps 退出码 {r.returncode}\n{r.stderr}"
-    return r.stdout
-
-
-@requires_bash
-@pytest.mark.skipif(not _PTR_SH.exists(), reason="parse-test-results.sh 不存在")
-def test_parity_parse_test_results_sh(tmp_path: Path):
-    """parse_test_results: Python 与 bash 输出字节级一致。"""
+    v0.6 起 parse_test_results 输出 ``source_lines``（行级覆盖率，供 diff
+    coverage 判定），不再输出 ``classes`` 键。
+    """
     sf_dir, jacoco = _ptr_make_fixture(tmp_path)
-    py_out = _ptr_run_py(sf_dir, jacoco)
-    sh_out = _ptr_run_sh(sf_dir, jacoco)
-    _assert_parity(py_out, sh_out, "parse_test_results", "bash")
+    data = json.loads(_ptr_run_py(sf_dir, jacoco))
+    # 单测/契约测试明细
+    assert data["unit_tests"]["total"] == 3
+    assert data["unit_tests"]["passed"] == 3
+    assert data["contract_tests"]["total"] == 2
+    assert data["contract_tests"]["failed"] == 1
+    # 覆盖率聚合（键为 line_coverage 等，非 line_percent）
+    assert data["coverage"]["line_coverage"] == round(50 / (5 + 50) * 100)
+    # v0.6：source_lines 键存在（行级覆盖率），classes 键已删除
+    assert "source_lines" in data
+    assert "classes" not in data
 
 
-@pytest.mark.skipif(not HAS_PWSH, reason="pwsh 不可用")
-@pytest.mark.skipif(not _PTR_PS.exists(), reason="parse-test-results.ps1 不存在")
-def test_parity_parse_test_results_ps(tmp_path: Path):
-    """parse_test_results: Python 与 PowerShell 输出字节级一致。"""
-    sf_dir, jacoco = _ptr_make_fixture(tmp_path)
-    py_out = _ptr_run_py(sf_dir, jacoco)
-    ps_out = _ptr_run_ps(sf_dir, jacoco)
-    _assert_parity(py_out, ps_out, "parse_test_results", "pwsh")
-
-
-# ── scan_test_stack parity ───────────────────────────────────────────────────
+# ── scan_test_stack 契约 ───────────────────────────────────────────────────
 
 _STS_POWERMOCK_JAVA = """\
 package com.example;
@@ -1301,55 +978,19 @@ def _sts_run_py(source_dir: Path) -> str:
     return r.stdout
 
 
-def _sts_run_sh(source_dir: Path) -> str:
-    r = subprocess.run(
-        ["bash", str(_STS_SH), "--source", str(source_dir), "--json"],
-        capture_output=True, text=True, timeout=30)
-    assert r.returncode == 0, f"sh 退出码 {r.returncode}\n{r.stderr}"
-    return r.stdout
-
-
-def _sts_run_ps(source_dir: Path) -> str:
-    r = subprocess.run(
-        ["pwsh", "-NoProfile", "-File", str(_STS_PS),
-         "-Source", str(source_dir), "-Json"],
-        capture_output=True, text=True, timeout=30)
-    assert r.returncode == 0, f"ps 退出码 {r.returncode}\n{r.stderr}"
-    return r.stdout
-
-
-@requires_bash
-@pytest.mark.skipif(not _STS_SH.exists(), reason="scan-test-stack.sh 不存在")
-def test_parity_scan_test_stack_sh(tmp_path: Path):
-    """scan_test_stack: Python 与 bash 输出字节级一致。"""
+def test_scan_test_stack_py(tmp_path: Path):
+    """scan_test_stack: Python 输出契约（检出 PowerMock + @SpringBootTest）。"""
     src = _sts_make_fixture(tmp_path)
-    py_out = _sts_run_py(src)
-    sh_out = _sts_run_sh(src)
-    _assert_parity(py_out, sh_out, "scan_test_stack", "bash")
+    data = json.loads(_sts_run_py(src))
+    findings = data["forbidden_findings"]
+    types = {f["type"] for f in findings}
+    assert "powermock" in types
+    assert "springboottest" in types
+    # 干净测试类不误报
+    assert all("CleanTest" not in f.get("file", "") for f in findings)
 
 
-@pytest.mark.skipif(not HAS_PWSH, reason="pwsh 不可用")
-@pytest.mark.skipif(not _STS_PS.exists(), reason="scan-test-stack.ps1 不存在")
-def test_parity_scan_test_stack_ps(tmp_path: Path):
-    """scan_test_stack: Python 与 PowerShell 输出字节级一致。"""
-    src = _sts_make_fixture(tmp_path)
-    py_out = _sts_run_py(src)
-    ps_out = _sts_run_ps(src)
-    _assert_parity(py_out, ps_out, "scan_test_stack", "pwsh")
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# v0.4 新增脚本 parity 测试：run_gate（降级模式，fixture 无 pom.xml）
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# ── 路径常量 ──────────────────────────────────────────────────────────────────
-
-_RG_PY = PROJECT_ROOT / "extensions" / "testing" / "scripts" / "python" / "run_gate.py"
-_RG_SH = PROJECT_ROOT / "extensions" / "testing" / "scripts" / "bash" / "run-gate.sh"
-_RG_PS = PROJECT_ROOT / "extensions" / "testing" / "scripts" / "powershell" / "run-gate.ps1"
-
-
-# ── 样本内容（降级模式 fixture：无 pom.xml -> 触发降级） ───────────────────
+# ── run_gate 契约（降级模式，fixture 无 pom.xml） ─────────────────────────
 
 _RG_SPEC_MD = """\
 # Transfer
@@ -1476,8 +1117,7 @@ class AccountServiceTest {
 def _rg_make_fixture(tmp_path: Path) -> dict:
     """创建降级模式 fixture（无 pom.xml）。
 
-    三语言共用同一 fixture（同一 source/spec/project/feature-dir），保证
-    gate_result_path 与 scan_spec_annotations 输出一致 -> stdout 字节级可比较。
+    beta 简化降级语义：无 java/mvn 或 ``--project`` 目录无 pom.xml 即降级。
     """
     spec_path = tmp_path / "spec.md"
     spec_path.write_text(_RG_SPEC_MD, encoding="utf-8")
@@ -1526,47 +1166,17 @@ def _rg_run_py(fx: dict) -> str:
     return r.stdout
 
 
-def _rg_run_sh(fx: dict) -> str:
-    r = subprocess.run(
-        ["bash", str(_RG_SH),
-         "--source", str(fx["src"]),
-         "--test-source", str(fx["test_src"]),
-         "--spec", str(fx["spec"]),
-         "--project", str(fx["tmp_path"]),
-         "--feature-dir", str(fx["feature_dir"]),
-         "--config", str(fx["config"]),
-         "--json"],
-        capture_output=True, text=True, timeout=60)
-    assert r.returncode == 0, f"sh 退出码 {r.returncode}\nstdout: {r.stdout}\nstderr: {r.stderr}"
-    return r.stdout
+def test_run_gate_degraded_py(tmp_path: Path):
+    """run_gate（降级模式）：Python 输出契约 + gate-result.md。
 
-
-def _rg_run_ps(fx: dict) -> str:
-    r = subprocess.run(
-        ["pwsh", "-NoProfile", "-File", str(_RG_PS),
-         "-Source", str(fx["src"]),
-         "-TestSource", str(fx["test_src"]),
-         "-Spec", str(fx["spec"]),
-         "-Project", str(fx["tmp_path"]),
-         "-FeatureDir", str(fx["feature_dir"]),
-         "-Config", str(fx["config"]),
-         "-Json"],
-        capture_output=True, text=True, timeout=60)
-    assert r.returncode == 0, f"ps 退出码 {r.returncode}\nstdout: {r.stdout}\nstderr: {r.stderr}"
-    return r.stdout
-
-
-@requires_bash
-@pytest.mark.skipif(not _RG_SH.exists(), reason="run-gate.sh 不存在")
-def test_parity_run_gate_sh(tmp_path: Path):
-    """run_gate（降级模式）：Python 与 bash stdout 字节级一致 + gate-result.md 一致。"""
+    beta 简化降级语义：fixture 无 pom.xml -> degraded。输出含
+    degraded_reason / diff_coverage / diff_threshold 等新字段，
+    不再含 scope_* / suggestion / located_module。
+    """
     fx = _rg_make_fixture(tmp_path)
-    py_out = _rg_run_py(fx)
-    sh_out = _rg_run_sh(fx)
-    _assert_parity(py_out, sh_out, "run_gate", "bash")
+    data = json.loads(_rg_run_py(fx))
 
-    # 输出内容校验：降级模式 PASS + 全部契约字段
-    data = json.loads(py_out)
+    # 降级模式 PASS + 全部契约字段
     assert data["status"] == "PASS"
     assert data["mode"] == "degraded"
     assert data["mvn_clean_test"] == "SKIPPED"
@@ -1574,17 +1184,21 @@ def test_parity_run_gate_sh(tmp_path: Path):
     assert data["spec_coverage"]["coverage_percent"] == 100
     assert data["fail_reasons"] == []
 
-    # gate-result.md 由脚本写出（py 与 sh 都写同一路径，内容一致）
+    # beta 简化降级语义：无 pom.xml -> degraded_reason 非空
+    assert data["degraded_reason"], "降级模式必须给出 degraded_reason"
+    assert "pom.xml" in data["degraded_reason"]
+
+    # v0.6 新字段：diff coverage 语义（降级时 N/A）
+    assert "diff_coverage" in data
+    assert "diff_threshold" in data
+    assert data["diff_coverage"]["mode"] == "N/A"
+
+    # 已删除字段：scope_* / suggestion / located_module 不再输出
+    assert "suggestion" not in data
+    assert "located_module" not in data
+    assert not any(k.startswith("scope_") for k in data)
+
+    # gate-result.md 由脚本写出（beta 简化降级文案）
     md = (fx["docs_dir"] / "gate-result.md").read_text(encoding="utf-8")
     assert "## Gate Result: PASS" in md
-    assert "降级模式（无 java/mvn 或项目无 pom.xml 且无候选模块）" in md
-
-
-@pytest.mark.skipif(not HAS_PWSH, reason="pwsh 不可用")
-@pytest.mark.skipif(not _RG_PS.exists(), reason="run-gate.ps1 不存在")
-def test_parity_run_gate_ps(tmp_path: Path):
-    """run_gate（降级模式）：Python 与 PowerShell stdout 字节级一致。"""
-    fx = _rg_make_fixture(tmp_path)
-    py_out = _rg_run_py(fx)
-    ps_out = _rg_run_ps(fx)
-    _assert_parity(py_out, ps_out, "run_gate", "pwsh")
+    assert "降级模式（无 java/mvn 或 --project 目录无 pom.xml）" in md

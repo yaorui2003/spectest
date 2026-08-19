@@ -26,6 +26,10 @@
 .PARAMETER ExcludePatterns
   排除模式（逗号分隔，可选，供 UNSPEC_CODE 排除表）。
 
+.PARAMETER Config
+  testing-config.yml 路径（可选）：读 scan.unspec_exclude_patterns 作为排除
+  模式默认；-ExcludePatterns 显式提供时以 CLI 为准。
+
 .PARAMETER Json
   输出 JSON 到 stdout（固定开启）。
 
@@ -33,11 +37,17 @@
   ./scan-spec-annotations.ps1 -Source ./src -Spec ./spec.md -Json
 #>
 
+<#
+DEPRECATED (beta 阶段)：本脚本已弃用，仅保留供参考，不再维护。
+当前只维护 scripts/python/ 下的唯一实现；行为可能与 python 版漂移。
+#>
+
 param(
     [Parameter(Mandatory=$true)][string]$Source,
     [Parameter(Mandatory=$true)][string]$Spec,
     [string]$TestSource,
     [string]$ExcludePatterns,
+    [string]$Config,
     [switch]$Json
 )
 
@@ -71,6 +81,7 @@ if (-not $pyExe) {
 $pyArgs = @("--source", $Source, "--spec", $Spec)
 if ($TestSource) { $pyArgs += @("--test-source", $TestSource) }
 if ($ExcludePatterns) { $pyArgs += @("--exclude-patterns", $ExcludePatterns) }
+if ($Config) { $pyArgs += @("--config", $Config) }
 $pyArgs += "--json"
 
 & $pyExe $corePath @pyArgs

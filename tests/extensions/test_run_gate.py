@@ -1,4 +1,4 @@
-"""run_gate 门禁编排脚本输出契约测试（v0.4 新增）。
+"""run_gate 门禁编排脚本输出契约测试（v0.4 新增，v0.6 diff coverage 重写）。
 
 用 subprocess 调用 ``run_gate.py``（降级模式：fixture 无 pom.xml，且环境可能
 无 java/mvn），喂入 tmp 样本工程，断言 stdout 判定 JSON 契约与 gate-result.md
@@ -7,20 +7,24 @@
 - (a) 脚本存在且 ``--json`` 输出合法 JSON（含全部契约字段）
 - (b) 降级模式（fixture 无 pom.xml）：status PASS / mode=degraded /
   risk_level=high / mvn_clean_test=SKIPPED / spec_coverage 100% / gate-result.md
-  写出且标注"降级模式（无 java/mvn 或项目无 pom.xml 且无候选模块）"
+  写出且标注"降级模式（无 java/mvn 或 --project 目录无 pom.xml）"
 - (c) FAIL 场景：删 @Spec -> unimplemented_rules 非空 -> FAIL（exit 1）
 - (d) FAIL 场景：加孤儿注解（rule=R9）-> orphan_annotations 非空 -> FAIL
 - (e) FAIL 场景：impact-report.md 缺失 -> "impact 未执行"（堵 P0 #3）
 - (f) ``--check-only`` 不写 gate-result.md
 - (g) 确定性核心 ``run()`` 直接单测：full 模式阈值比对（high 档阈值套用）+
   mvn 失败 + surefire/jacoco 报告缺失 + gate-result.md 内容格式
+- (i) v0.6 降级判定（collect_environment 新语义：无 java/mvn 或 --project 无 pom）
+- (j) v0.6 SOFT 段只读检查 + 写文件保留 AI 手写段（防覆盖回归）
+- (k) v0.6 diff coverage（真实 git 仓库）：diff 判定 / 阈值边界 / 无 jacoco 数据 /
+  fallback_all / no_changes / --diff-base / degraded N/A / config 阈值回落
+- (l) v0.6 UNSPEC_CODE 漂移告警对接（MEDIUM 不阻断）
 """
 
 from __future__ import annotations
 
 import importlib.util
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -152,6 +156,24 @@ JACOCO_XML = """\
   <counter type="COMPLEXITY" missed="3" covered="17"/>
 </report>
 """
+
+# diff coverage 用例的 git 样本：V1 commit 后改 V2，新增 2 行（新文件行 5-6）
+_JAVA_V1 = (
+    "package com.example;\n"
+    "\n"
+    "public class AccountService {\n"
+    "    public void a() {}\n"
+    "}\n"
+)
+_JAVA_V2 = (
+    "package com.example;\n"
+    "\n"
+    "public class AccountService {\n"
+    "    public void a() {}\n"
+    "    public void b() {}\n"
+    "    public void c() {}\n"
+    "}\n"
+)
 
 
 # ── 样本 Java 生成 ──────────────────────────────────────────────────────────
@@ -285,6 +307,61 @@ def _load_run_gate_module():
     return mod
 
 
+# ── git 仓库辅助（diff coverage 用例） ──────────────────────────────────────
+
+
+def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
+    """在 cwd 执行 git 命令；失败即断言（测试前置 git 操作必须成功）。"""
+    proc = subprocess.run(
+        ["git", *args], cwd=cwd, capture_output=True, text=True, timeout=60,
+    )
+    assert proc.returncode == 0, f"git {' '.join(args)} 失败: {proc.stderr}"
+    return proc
+
+
+@pytest.fixture
+def git_repo(tmp_path: Path) -> Path:
+    """在 tmp_path 初始化真实 git 仓库（main 分支 + user 配置），返回 tmp_path。"""
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "config", "user.email", "test@example.com")
+    _git(tmp_path, "config", "user.name", "test")
+    return tmp_path
+
+
+def _commit_java_file(repo: Path, rel: str, content: str, msg: str = "init") -> Path:
+    """在 repo 下写 java 文件并 commit，返回文件路径。"""
+    f = repo / rel
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(content, encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", msg)
+    return f
+
+
+def _make_diff_repo(fx: dict) -> None:
+    """建 diff 场景 git 仓库：commit 初始 java（V1），再修改新增 2 行（变更行 5-6）。
+
+    变更行 = 新文件第 5、6 行（``git diff --unified=0`` 输出 ``@@ -4,0 +5,2 @@``）。
+    """
+    _make_full_mode_reports(fx)
+    f = _commit_java_file(fx["tmp_path"], "com/example/AccountService.java", _JAVA_V1)
+    f.write_text(_JAVA_V2, encoding="utf-8")
+
+
+def _make_jacoco_source_lines(key: str, covered: list[int], total: list[int]) -> list[dict]:
+    """构造 parse_results.source_lines 条目（与 parse_test_results 输出格式一致）。
+
+    key 形如 ``com/example/AccountService.java``（package 点转斜杠 + / + 文件名）；
+    covered 为已覆盖行号（ci=1），total 为全部行号（nr 升序）。
+    """
+    lines = [
+        {"nr": nr, "mi": 0 if nr in covered else 1, "ci": 1 if nr in covered else 0}
+        for nr in sorted(total)
+    ]
+    pkg = key.rsplit("/", 1)[0].replace("/", ".")
+    return [{"key": key, "package": pkg, "file": key.rsplit("/", 1)[1], "lines": lines}]
+
+
 # ── 用例 (a): 脚本存在 + JSON 合法 ───────────────────────────────────────
 
 
@@ -301,10 +378,9 @@ def test_json_output_has_all_contract_fields(gate_fixture):
         "unit_tests", "contract_tests", "coverage", "spec_coverage",
         "displayname_match", "adversarial_coverage", "threshold_results",
         "fail_reasons",
-        # v0.6 新增契约字段（4.5 模块定位 / 5.3 SOFT / 6.6 作用域+baseline / 9.6 unspec）
-        "degraded_reason", "suggestion", "located_module", "soft_missing",
-        "coverage_scope", "scope_total", "scope_covered", "scope_outside_total",
-        "unspec_codes_count", "baseline_file", "mvn_dir",
+        # v0.6 契约字段（降级原因 / SOFT / unspec / diff coverage）
+        "degraded_reason", "soft_missing", "unspec_codes_count",
+        "diff_coverage", "diff_threshold",
     ]:
         assert field in data, f"缺少契约字段: {field}"
 
@@ -327,13 +403,15 @@ def test_degraded_mode_pass(gate_fixture):
     assert [t["metric"] for t in data["threshold_results"]] == ["spec_coverage"]
     assert data["threshold_results"][0]["pass"] is True
     assert data["fail_reasons"] == []
+    # 降级模式 diff coverage 为 N/A
+    assert data["diff_coverage"]["mode"] == "N/A"
 
     # gate-result.md 由脚本写出，且明确标注降级模式
     gate_result = gate_fixture["docs_dir"] / "gate-result.md"
     assert gate_result.is_file(), "run_gate 应写出 gate-result.md"
     md = gate_result.read_text(encoding="utf-8")
     assert "## Gate Result: PASS" in md
-    assert "降级模式（无 java/mvn 或项目无 pom.xml 且无候选模块）" in md
+    assert "降级模式（无 java/mvn 或 --project 目录无 pom.xml）" in md
     assert "risk_level: high" in md
 
     # v0.5：降级模式仍构造 adversarial_coverage（affected_rules/counts 为空，
@@ -461,6 +539,7 @@ def _full_mode_inputs(fx: dict, **overrides) -> dict:
                 "method_coverage": 92, "instruction_coverage": 90,
                 "complexity_coverage": 85,
             },
+            "source_lines": [],
         },
         "scan_spec": scan_spec,
     }
@@ -485,23 +564,6 @@ def _degraded_inputs(fx: dict, **overrides) -> dict:
     return inputs
 
 
-def _make_scope_class(pkg: str, cls: str, cov: float) -> dict:
-    """构造 parse_results.classes 条目（与 parse_test_results 输出格式一致）。
-
-    package 用 jacoco.xml 原生 "/" 分隔（com/example），run_gate 归一化
-    "." 后与作用域匹配（v0.6 9.4）。
-    """
-    return {
-        "name": f"{pkg}.{cls}",
-        "package": pkg,
-        "line_coverage": cov,
-        "branch_coverage": cov,
-        "method_coverage": cov,
-        "instruction_coverage": cov,
-        "complexity_coverage": cov,
-    }
-
-
 def test_run_full_mode_pass(gate_fixture):
     """full 模式核心：high 风险档阈值全部达标 -> PASS，gate-result.md 格式正确。"""
     _make_full_mode_reports(gate_fixture)
@@ -512,7 +574,9 @@ def test_run_full_mode_pass(gate_fixture):
     assert result["mode"] == "full"
     assert result["mvn_clean_test"] == "SUCCESS"
     assert result["risk_level"] == "high"
-    # high 档阈值：line 90 / branch 70 / method 90 / instruction 90 / complexity 80
+    # 非 git 目录 -> fallback_all，走全量聚合阈值（high 档：line 90 / branch 70 /
+    # method 90 / instruction 90 / complexity 80）
+    assert result["diff_coverage"]["mode"] == "fallback_all"
     thr = {t["metric"]: t for t in result["threshold_results"]}
     assert thr["line_coverage"]["threshold"] == 90
     assert thr["method_coverage"]["threshold"] == 90
@@ -527,7 +591,7 @@ def test_run_full_mode_pass(gate_fixture):
     assert "## Gate Result: PASS" in md
     assert "- mvn clean test: SUCCESS" in md
     assert "target 清理: 已清理" in md
-    assert "行覆盖率: 95% (阈值 >= 90%)" in md
+    assert "- diff coverage: 无 git，回退全量阈值判定" in md
     assert "DisplayName 对齐数: 8 / 8" in md
     assert "risk_overrides.high" in md
     # v0.5：gate-result.md 含关键路径对抗覆盖段
@@ -540,11 +604,12 @@ def test_run_full_mode_low_coverage_fail(gate_fixture):
     _make_full_mode_reports(gate_fixture)
     rg = _load_run_gate_module()
     inputs = _full_mode_inputs(gate_fixture)
-    # 把行覆盖率压到 65%（high 档阈值 90）
+    # 把行覆盖率压到 65%（high 档阈值 90）；非 git -> fallback_all 全量聚合判定
     inputs["parse_results"]["coverage"]["line_coverage"] = 65
     result = rg.run(inputs)
 
     assert result["status"] == "FAIL"
+    assert result["diff_coverage"]["mode"] == "fallback_all"
     assert any("line_coverage 65% < 90%" in r for r in result["fail_reasons"]), (
         result["fail_reasons"]
     )
@@ -689,20 +754,7 @@ def test_run_full_mode_adversarial_degraded_by_config(gate_fixture):
     assert "R1" in adv["missing"]  # 仍统计，但不阻断
 
 
-# ── 用例 (i): v0.6 4.5 降级定位（_locate_module / collect_environment） ────
-
-
-def _fake_java_mvn(monkeypatch, rg) -> None:
-    """monkeypatch shutil.which，确定性模拟 java/mvn 在 PATH（不依赖环境）。"""
-    monkeypatch.setattr(rg.shutil, "which", lambda name: f"/fake/bin/{name}")
-
-
-def _write_submodule_pom(root: Path, module: str) -> Path:
-    """在 root 下写子模块 pom.xml（唯一候选/多候选 fixture 用）。"""
-    pom = root / module / "pom.xml"
-    pom.parent.mkdir(parents=True, exist_ok=True)
-    pom.write_text("<project/>", encoding="utf-8")
-    return pom
+# ── 用例 (i): v0.6 降级判定（collect_environment 新语义） ─────────────────
 
 
 def test_collect_environment_no_java_mvn_degraded(monkeypatch, tmp_path):
@@ -713,132 +765,32 @@ def test_collect_environment_no_java_mvn_degraded(monkeypatch, tmp_path):
     """
     rg = _load_run_gate_module()
     monkeypatch.setattr(rg.shutil, "which", lambda name: None)
-    env = rg.collect_environment(str(tmp_path), auto_locate=False)
+    env = rg.collect_environment(str(tmp_path))
     assert env["degraded"] is True
     assert env["degraded_reason"] == "no java/mvn on PATH"
-    assert env["located_module"] is None
-    assert env["mvn_dir"] == str(tmp_path)
-
-
-def test_collect_environment_unique_module_not_degraded(monkeypatch, tmp_path):
-    """根无 pom + 唯一子模块 pom -> 不降级，located_module/suggestion 就位。"""
-    _write_submodule_pom(tmp_path, "module-a")
-    rg = _load_run_gate_module()
-    _fake_java_mvn(monkeypatch, rg)
-    env = rg.collect_environment(str(tmp_path), auto_locate=False)
-    assert env["degraded"] is False
-    assert env["located_module"] == "module-a"
-    assert env["degraded_reason"] == ""
-    assert "--project module-a" in env["suggestion"]
-    # 非 auto-locate：mvn_dir 仍为 project（mvn 不跑，由 main 判 SKIPPED）
-    assert env["mvn_dir"] == str(tmp_path)
-
-
-def test_collect_environment_unique_module_auto_locate_adopted(monkeypatch, tmp_path):
-    """--auto-locate + 唯一候选 -> located_module 被采用，mvn 在模块目录执行。"""
-    _write_submodule_pom(tmp_path, "module-a")
-    rg = _load_run_gate_module()
-    _fake_java_mvn(monkeypatch, rg)
-    env = rg.collect_environment(str(tmp_path), auto_locate=True)
-    assert env["degraded"] is False
-    assert env["located_module"] == "module-a"
-    assert env["mvn_dir"] == str(tmp_path / "module-a")
-
-
-def test_collect_environment_ambiguous_multi_module(monkeypatch, tmp_path):
-    """根无 pom + 多候选 -> 不降级但 located_module=None，suggestion 提示 --project。"""
-    for m in ("module-a", "module-b"):
-        _write_submodule_pom(tmp_path, m)
-    rg = _load_run_gate_module()
-    _fake_java_mvn(monkeypatch, rg)
-    env = rg.collect_environment(str(tmp_path), auto_locate=False)
-    assert env["degraded"] is False
-    assert env["located_module"] is None
-    assert "多模块候选" in env["suggestion"]
-    assert "--project" in env["suggestion"]
 
 
 def test_collect_environment_no_pom_degraded(monkeypatch, tmp_path):
-    """根无 pom + 无候选 -> degraded，degraded_reason 含 "pom.xml not found"。"""
+    """--project 目录无 pom.xml -> degraded，reason 提示 AI 先 find pom。"""
     rg = _load_run_gate_module()
-    _fake_java_mvn(monkeypatch, rg)
-    env = rg.collect_environment(str(tmp_path), auto_locate=False)
+    monkeypatch.setattr(rg.shutil, "which", lambda name: f"/fake/bin/{name}")
+    env = rg.collect_environment(str(tmp_path))
     assert env["degraded"] is True
     assert "pom.xml not found" in env["degraded_reason"]
-    assert env["suggestion"] == ""
+    assert "find . -name pom.xml" in env["degraded_reason"]
 
 
-@pytest.fixture
-def fake_java_mvn_path(tmp_path, monkeypatch) -> Path:
-    """在 PATH 前置含假 java/mvn（exit 0）的目录，使 CLI 级环境检测确定化。
-
-    子进程继承 os.environ，故 `_run_gate` 调用的 run_gate.py 内
-    shutil.which("java"/"mvn") 一定命中，不依赖本机是否安装。
-    """
-    bindir = tmp_path / "fake-toolchain"
-    bindir.mkdir()
-    for name in ("java", "mvn"):
-        exe = bindir / name
-        exe.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-        exe.chmod(0o755)
-    monkeypatch.setenv("PATH", str(bindir) + os.pathsep + os.environ.get("PATH", ""))
-    return bindir
+def test_collect_environment_with_pom_not_degraded(monkeypatch, tmp_path):
+    """--project 目录有 pom.xml -> 不降级。"""
+    (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
+    rg = _load_run_gate_module()
+    monkeypatch.setattr(rg.shutil, "which", lambda name: f"/fake/bin/{name}")
+    env = rg.collect_environment(str(tmp_path))
+    assert env["degraded"] is False
+    assert env["degraded_reason"] == ""
 
 
-def test_cli_unique_module_non_auto_locate_mvn_skipped(gate_fixture, fake_java_mvn_path):
-    """CLI：根无 pom + 唯一子模块（非 --auto-locate）-> 不降级但 mvn SKIPPED
-    -> FAIL 且提示重跑（--auto-locate 或 --project <模块>）。"""
-    _write_submodule_pom(gate_fixture["tmp_path"], "module-a")
-    rc, data = _run_gate(gate_fixture)
-    assert rc == 1, f"SKIPPED 场景应退出码 1: {data['fail_reasons']}"
-    assert data["status"] == "FAIL"
-    assert data["mode"] == "full"          # 唯一候选不降级
-    assert data["mvn_clean_test"] == "SKIPPED"
-    assert data["located_module"] == "module-a"
-    assert "--project module-a" in data["suggestion"]
-    assert any("auto-locate" in r for r in data["fail_reasons"]), data["fail_reasons"]
-
-
-def test_cli_ambiguous_modules_exit_2(gate_fixture, fake_java_mvn_path):
-    """CLI：根无 pom + 多候选 -> 用法错误 exit 2，stderr 含提示，不产判定 JSON。"""
-    for m in ("module-a", "module-b"):
-        _write_submodule_pom(gate_fixture["tmp_path"], m)
-    rc, stdout, stderr = _run_py([
-        "--source", str(gate_fixture["src"]),
-        "--test-source", str(gate_fixture["test_src"]),
-        "--spec", str(gate_fixture["spec"]),
-        "--project", str(gate_fixture["tmp_path"]),
-        "--feature-dir", str(gate_fixture["feature_dir"]),
-        "--config", str(gate_fixture["config"]),
-        "--json",
-    ])
-    assert rc == 2
-    assert "多模块候选" in stderr
-    assert "--project" in stderr
-    assert stdout.strip() == "", "用法错误不应输出判定 JSON"
-
-
-def test_cli_auto_locate_unique_module_adopted(gate_fixture, fake_java_mvn_path):
-    """CLI：--auto-locate + 唯一候选 -> JSON 采用 located_module，mvn 在模块目录执行。"""
-    _write_submodule_pom(gate_fixture["tmp_path"], "module-a")
-    rc, data = _run_gate(gate_fixture, "--auto-locate")
-    assert data["mode"] == "full"
-    assert data["degraded_reason"] == ""
-    assert data["located_module"] == "module-a"
-    assert data["mvn_dir"] == str(gate_fixture["tmp_path"] / "module-a")
-    assert data["mvn_clean_test"] == "SUCCESS"  # 假 mvn exit 0 -> 在模块目录执行
-
-
-def test_degraded_json_has_locator_fields(gate_fixture):
-    """降级 JSON 契约：degraded_reason/suggestion/located_module 三字段存在性。"""
-    rc, data = _run_gate(gate_fixture)
-    assert rc == 0
-    assert "degraded_reason" in data
-    assert "suggestion" in data
-    assert "located_module" in data
-
-
-# ── 用例 (j): v0.6 5.3 SOFT 段只读检查 ───────────────────────────────────
+# ── 用例 (j): v0.6 SOFT 段只读检查 + 保留 AI 手写段 ──────────────────────
 
 
 SOFT_HEADER = "## AI 交叉验证（SOFT，不影响判定）"
@@ -881,157 +833,172 @@ def test_run_soft_missing_stable_across_runs(gate_fixture):
     assert second["soft_missing"] is True, "WARN 文案不得被自身正则命中（自满足 bug）"
 
 
-# ── 用例 (k): v0.6 6.6 覆盖率作用域 + baseline ───────────────────────────
+def test_run_soft_section_preserved_after_rewrite(gate_fixture):
+    """gate-result.md 含 AI 手写 SOFT 段 -> 重跑后该段保留且 soft_missing=false（防覆盖回归）。"""
+    rg = _load_run_gate_module()
+    gate_result = gate_fixture["docs_dir"] / "gate-result.md"
+    ai_section = (
+        f"{SOFT_HEADER}\n\n"
+        "人工交叉验证：无漂移\n"
+        "- 归因：无\n"
+    )
+    gate_result.write_text("## Gate Result: FAIL\n\n旧内容\n\n" + ai_section, encoding="utf-8")
+    result = rg.run(_degraded_inputs(gate_fixture))
+    assert result["status"] == "PASS"
+    assert result["soft_missing"] is False
+    md = gate_result.read_text(encoding="utf-8")
+    assert SOFT_HEADER in md
+    assert "人工交叉验证：无漂移" in md  # AI 手写内容不被覆盖抹掉
+    assert "归因：无" in md
 
 
-def test_run_full_mode_scope_explicit_in_scope_low_coverage_fail(gate_fixture):
-    """显式作用域：作用域内低覆盖 -> FAIL；作用域外低覆盖只统计不 FAIL。"""
-    _make_full_mode_reports(gate_fixture)
+# ── 用例 (k): v0.6 diff coverage（真实 git 仓库） ─────────────────────────
+
+
+def test_run_full_mode_diff_coverage_percent_and_threshold(gate_fixture, git_repo):
+    """diff 模式：变更 2 行 1 行覆盖 -> percent=50；阈值 80 FAIL / 40 PASS。"""
+    _make_diff_repo(gate_fixture)
     rg = _load_run_gate_module()
     inputs = _full_mode_inputs(gate_fixture)
-    inputs["coverage_scope"] = "com.a"
-    inputs["parse_results"]["classes"] = [
-        _make_scope_class("com/a", "ClassA", 55.0),  # 作用域内：低覆盖
-        _make_scope_class("com/b", "ClassB", 20.0),  # 作用域外：低覆盖（不判）
-    ]
+    inputs["parse_results"]["source_lines"] = _make_jacoco_source_lines(
+        "com/example/AccountService.java", covered=[5], total=[5, 6]
+    )
+    # 阈值 80（默认）-> FAIL
     result = rg.run(inputs)
+    assert result["diff_coverage"]["mode"] == "diff"
+    assert result["diff_coverage"]["base"] == "HEAD"
+    assert result["diff_coverage"]["total_lines"] == 2
+    assert result["diff_coverage"]["covered_lines"] == 1
+    assert result["diff_coverage"]["percent"] == 50
+    assert result["diff_threshold"] == 80
     assert result["status"] == "FAIL"
-    assert result["scope_total"] == 1
-    assert result["scope_covered"] == 0
-    assert result["scope_outside_total"] == 1
-    assert any("com/a.ClassA" in r and "作用域内" in r for r in result["fail_reasons"]), (
+    assert any("diff coverage 50% < 80%" in r for r in result["fail_reasons"]), (
         result["fail_reasons"]
     )
-    assert not any("ClassB" in r for r in result["fail_reasons"]), "作用域外类不得 FAIL"
+    # 阈值 40 -> PASS（同一 git 状态重跑）
+    inputs["diff_threshold"] = 40
+    result2 = rg.run(inputs)
+    assert result2["status"] == "PASS", result2["fail_reasons"]
+    thr = {t["metric"]: t for t in result2["threshold_results"]}
+    assert thr["diff_coverage"]["pass"] is True
 
 
-def test_run_full_mode_scope_explicit_outside_low_coverage_pass(gate_fixture):
-    """显式作用域：作用域外低覆盖 -> PASS（scope_outside_total>0，scope_total/covered 正确）。"""
-    _make_full_mode_reports(gate_fixture)
+def test_run_full_mode_diff_coverage_threshold_boundary(gate_fixture, git_repo):
+    """阈值边界：percent == threshold -> PASS。"""
+    _make_diff_repo(gate_fixture)
     rg = _load_run_gate_module()
     inputs = _full_mode_inputs(gate_fixture)
-    inputs["coverage_scope"] = "com.a"
-    inputs["parse_results"]["classes"] = [
-        _make_scope_class("com/a", "ClassA", 95.0),  # 作用域内：达标
-        _make_scope_class("com/b", "ClassB", 20.0),  # 作用域外：低覆盖（INFO）
-    ]
+    inputs["parse_results"]["source_lines"] = _make_jacoco_source_lines(
+        "com/example/AccountService.java", covered=[5], total=[5, 6]
+    )
+    inputs["diff_threshold"] = 50  # percent 50 == 阈值 50
     result = rg.run(inputs)
     assert result["status"] == "PASS", result["fail_reasons"]
-    assert result["scope_total"] == 1
-    assert result["scope_covered"] == 1
-    assert result["scope_outside_total"] == 1
-    assert result["coverage_scope"] == "com.a"
-    assert "scope_total" in result and "scope_covered" in result and "scope_outside_total" in result
+    thr = {t["metric"]: t for t in result["threshold_results"]}
+    assert thr["diff_coverage"]["actual"] == 50
+    assert thr["diff_coverage"]["pass"] is True
 
 
-def test_run_full_mode_scope_explicit_empty_fail(gate_fixture):
-    """显式作用域解析为空 -> FAIL（coverage scope 为空）。"""
-    _make_full_mode_reports(gate_fixture)
+def test_run_full_mode_diff_coverage_no_jacoco_data_fail(gate_fixture, git_repo):
+    """diff 文件不在 source_lines（无 jacoco 行级数据）-> 变更行全未覆盖 percent=0 -> FAIL。"""
+    _make_diff_repo(gate_fixture)
     rg = _load_run_gate_module()
     inputs = _full_mode_inputs(gate_fixture)
-    inputs["coverage_scope"] = " , "  # 逗号分隔后全为空白 -> 空集
-    inputs["parse_results"]["classes"] = [_make_scope_class("com/a", "ClassA", 95.0)]
+    inputs["parse_results"]["source_lines"] = []  # 无行级数据（声明即承诺，保守方向）
     result = rg.run(inputs)
+    assert result["diff_coverage"]["mode"] == "diff"
+    assert result["diff_coverage"]["total_lines"] == 2
+    assert result["diff_coverage"]["covered_lines"] == 0
+    assert result["diff_coverage"]["percent"] == 0
     assert result["status"] == "FAIL"
-    assert any("coverage scope 为空" in r for r in result["fail_reasons"]), result["fail_reasons"]
+    assert any("diff coverage 0% < 80%" in r for r in result["fail_reasons"]), (
+        result["fail_reasons"]
+    )
 
 
-def test_run_full_mode_scope_auto_no_git_falls_back_all(gate_fixture):
-    """auto 无 git（tmp_path 非 git 仓库）-> 回退 all 全量聚合判定（保守宁严勿松）。"""
+def test_run_full_mode_diff_fallback_all_no_git(gate_fixture):
+    """非 git 目录 -> mode=fallback_all，全量聚合阈值判定生效（低聚合覆盖 -> FAIL）。"""
     _make_full_mode_reports(gate_fixture)
     rg = _load_run_gate_module()
     inputs = _full_mode_inputs(gate_fixture)
-    inputs["coverage_scope"] = "auto"
-    inputs["parse_results"]["classes"] = [_make_scope_class("com/a", "ClassA", 95.0)]
     inputs["parse_results"]["coverage"]["line_coverage"] = 65  # 聚合低覆盖
     result = rg.run(inputs)
-    assert result["coverage_scope"] == "all（auto 无 git，回退全量）"
-    # 行为=all：聚合 line_coverage 65 < 90 -> FAIL（若空转作用域则会 PASS）
+    assert result["diff_coverage"]["mode"] == "fallback_all"
     assert result["status"] == "FAIL"
     assert any("line_coverage 65% < 90%" in r for r in result["fail_reasons"]), (
         result["fail_reasons"]
     )
 
 
-def test_run_full_mode_scope_out_of_bounds_fail(gate_fixture, monkeypatch):
-    """越界检测（声明即承诺）：git diff 的 Java 文件顶层包不在显式作用域 -> FAIL。
-
-    tmp_path 非 git 仓库，monkeypatch `_git_diff_packages` 模拟 has_git=True。
-    """
+def test_run_full_mode_diff_no_changes_pass(gate_fixture, git_repo):
+    """只改非 java 文件 -> mode=no_changes 且 PASS（无承诺，不判）。"""
     _make_full_mode_reports(gate_fixture)
+    readme = gate_fixture["tmp_path"] / "README.md"
+    readme.write_text("v1\n", encoding="utf-8")
+    _git(gate_fixture["tmp_path"], "add", "-A")
+    _git(gate_fixture["tmp_path"], "commit", "-q", "-m", "init")
+    readme.write_text("v2\n", encoding="utf-8")  # 只改非 java
     rg = _load_run_gate_module()
-    monkeypatch.setattr(rg, "_git_diff_packages", lambda mvn_dir: (True, {"com"}, {"com"}))
     inputs = _full_mode_inputs(gate_fixture)
-    inputs["coverage_scope"] = "com.a"  # diff 顶层包 com 不在作用域
-    inputs["parse_results"]["classes"] = [_make_scope_class("com/a", "ClassA", 95.0)]
+    inputs["parse_results"]["source_lines"] = []
     result = rg.run(inputs)
-    assert result["status"] == "FAIL"
-    assert any("coverage scope 越界" in r and "com" in r for r in result["fail_reasons"]), (
-        result["fail_reasons"]
+    assert result["diff_coverage"]["mode"] == "no_changes"
+    assert result["status"] == "PASS", result["fail_reasons"]
+    thr = {t["metric"]: t for t in result["threshold_results"]}
+    assert thr["diff_coverage"]["pass"] is True
+
+
+def test_run_full_mode_diff_base_branch(gate_fixture, git_repo):
+    """--diff-base：feature 分支 vs main（merge-base 定位）-> mode=diff 且 percent 合理。"""
+    _make_full_mode_reports(gate_fixture)
+    f = _commit_java_file(gate_fixture["tmp_path"], "com/example/AccountService.java", _JAVA_V1)
+    _git(gate_fixture["tmp_path"], "checkout", "-q", "-b", "feature")
+    f.write_text(_JAVA_V2, encoding="utf-8")
+    rg = _load_run_gate_module()
+    inputs = _full_mode_inputs(gate_fixture)
+    inputs["parse_results"]["source_lines"] = _make_jacoco_source_lines(
+        "com/example/AccountService.java", covered=[5], total=[5, 6]
     )
-
-
-def test_run_full_mode_scope_baseline_first_run_writes_snapshot_pass(gate_fixture):
-    """--baseline 文件不存在 -> 首次写快照且 PASS（绝对值低不判）。"""
-    _make_full_mode_reports(gate_fixture)
-    rg = _load_run_gate_module()
-    inputs = _full_mode_inputs(gate_fixture)
-    inputs["coverage_scope"] = "com.a"
-    inputs["parse_results"]["classes"] = [_make_scope_class("com/a", "ClassA", 55.0)]
-    baseline = gate_fixture["tmp_path"] / "baseline.json"
-    inputs["baseline"] = str(baseline)
+    inputs["diff_base"] = "main"
     result = rg.run(inputs)
-    assert result["status"] == "PASS", result["fail_reasons"]  # 55% 远低于阈值也不 FAIL
-    assert baseline.is_file(), "首次运行应写 baseline 快照"
-    snap = json.loads(baseline.read_text(encoding="utf-8"))
-    assert snap["com/a.ClassA"]["line_coverage"] == 55.0
-    assert result["baseline_file"] == str(baseline)
+    assert result["diff_coverage"]["mode"] == "diff"
+    assert result["diff_coverage"]["percent"] == 50
+    assert result["diff_coverage"]["base"] != "HEAD"  # merge-base 定位的 commit 前缀
 
 
-def test_run_full_mode_scope_baseline_regression_fail(gate_fixture):
-    """baseline 存在：当前 < baseline - 5 -> 增量退化 FAIL。"""
-    _make_full_mode_reports(gate_fixture)
+def test_run_degraded_diff_coverage_na(gate_fixture):
+    """degraded 模式 -> diff_coverage.mode=N/A，diff_threshold 仍输出（默认 80）。"""
     rg = _load_run_gate_module()
-    inputs = _full_mode_inputs(gate_fixture)
-    inputs["coverage_scope"] = "com.a"
-    inputs["parse_results"]["classes"] = [_make_scope_class("com/a", "ClassA", 60.0)]
-    baseline = gate_fixture["tmp_path"] / "baseline.json"
-    baseline.write_text(json.dumps({
-        "com/a.ClassA": {
-            "line_coverage": 95.0, "branch_coverage": 90.0, "method_coverage": 95.0,
-            "instruction_coverage": 95.0, "complexity_coverage": 90.0,
-        },
-    }), encoding="utf-8")
-    inputs["baseline"] = str(baseline)
-    result = rg.run(inputs)
-    assert result["status"] == "FAIL"
-    assert any("baseline 退化" in r and "com/a.ClassA" in r for r in result["fail_reasons"]), (
-        result["fail_reasons"]
+    result = rg.run(_degraded_inputs(gate_fixture))
+    assert result["status"] == "PASS"
+    assert result["diff_coverage"]["mode"] == "N/A"
+    assert result["diff_threshold"] == 80
+
+
+def test_run_full_mode_diff_threshold_from_config(gate_fixture, git_repo):
+    """config gate.diff_coverage_threshold=30 -> 不传 CLI，50% -> PASS（阈值回落）。"""
+    _make_diff_repo(gate_fixture)
+    cfg_path = gate_fixture["tmp_path"] / "testing-config-diff.yml"
+    cfg_path.write_text(
+        TESTING_CONFIG_YML.replace(
+            "  spec_traceability:",
+            "  diff_coverage_threshold: 30\n  spec_traceability:",
+        ),
+        encoding="utf-8",
     )
-
-
-def test_run_full_mode_scope_baseline_absolute_low_no_regression_pass(gate_fixture):
-    """baseline 存在：绝对值低但当前 == baseline（无退化）-> PASS。"""
-    _make_full_mode_reports(gate_fixture)
     rg = _load_run_gate_module()
     inputs = _full_mode_inputs(gate_fixture)
-    inputs["coverage_scope"] = "com.a"
-    low = 55.0
-    inputs["parse_results"]["classes"] = [_make_scope_class("com/a", "ClassA", low)]
-    baseline = gate_fixture["tmp_path"] / "baseline.json"
-    baseline.write_text(json.dumps({
-        "com/a.ClassA": {
-            "line_coverage": low, "branch_coverage": low, "method_coverage": low,
-            "instruction_coverage": low, "complexity_coverage": low,
-        },
-    }), encoding="utf-8")
-    inputs["baseline"] = str(baseline)
+    inputs["config"] = str(cfg_path)
+    inputs["parse_results"]["source_lines"] = _make_jacoco_source_lines(
+        "com/example/AccountService.java", covered=[5], total=[5, 6]
+    )
     result = rg.run(inputs)
-    assert result["status"] == "PASS", result["fail_reasons"]  # 绝对值 55% 不判
-    assert not any("baseline 退化" in r for r in result["fail_reasons"])
+    assert result["diff_threshold"] == 30
+    assert result["diff_coverage"]["percent"] == 50
+    assert result["status"] == "PASS", result["fail_reasons"]
 
 
-# ── 用例 (l): v0.6 9.6 UNSPEC_CODE 漂移告警对接 ───────────────────────────
+# ── 用例 (l): v0.6 UNSPEC_CODE 漂移告警对接 ───────────────────────────────
 
 
 def test_run_full_mode_unspec_codes_count_and_gate_md(gate_fixture):

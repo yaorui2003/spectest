@@ -25,6 +25,11 @@
   ./parse-test-results.ps1 -Surefire ./target/surefire-reports -Jacoco ./target/site/jacoco/jacoco.xml -Json
 #>
 
+<#
+DEPRECATED (beta 阶段)：本脚本已弃用，仅保留供参考，不再维护。
+当前只维护 scripts/python/ 下的唯一实现；行为可能与 python 版漂移。
+#>
+
 param(
     [Parameter(Mandatory=$true)][string]$Surefire,
     [Parameter(Mandatory=$true)][string]$Jacoco,

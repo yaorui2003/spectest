@@ -59,6 +59,11 @@
   ./run-gate.ps1 -Source ./src -TestSource ./src/test -Spec ./spec.md -Project . -FeatureDir ./specs/001-bank-transfer -Config ./testing-config.yml -Json
 #>
 
+<#
+DEPRECATED (beta 阶段)：本脚本已弃用，仅保留供参考，不再维护。
+当前只维护 scripts/python/ 下的唯一实现；行为可能与 python 版漂移。
+#>
+
 param(
     [Parameter(Mandatory=$true)][string]$Source,
     [Parameter(Mandatory=$true)][string]$TestSource,
@@ -91,7 +96,7 @@ if (-not $pyExe) {
     exit 3
 }
 
-if (-not $CoverageScope) { $CoverageScope = "auto" }
+# CoverageScope/Baseline 未传保持空串，由 run() 核心回落 config 默认（6.5）
 $autoLocateFlag = if ($AutoLocate) { "1" } else { "0" }
 
 # 与 python main() 一致：-Baseline 与 CoverageScope=all 互斥（v0.6 6.4，
@@ -170,7 +175,7 @@ if ($degraded -eq "0") {
         -Surefire (Join-Path $mvnDir "target\surefire-reports") `
         -Jacoco (Join-Path $mvnDir "target\site\jacoco\jacoco.xml") -Json 2>$null | Out-String).TrimEnd()
 }
-$specJson = (& "$PSScriptRoot\scan-spec-annotations.ps1" -Source $Source -Spec $Spec -TestSource $TestSource -Json 2>$null | Out-String).TrimEnd()
+$specJson = (& "$PSScriptRoot\scan-spec-annotations.ps1" -Source $Source -Spec $Spec -TestSource $TestSource -Config $Config -Json 2>$null | Out-String).TrimEnd()
 
 # ── JSON 序列化 + 确定性核心：python3 -c 导入 run_gate 兜底 ─────────────
 $pyCore = @'
@@ -206,7 +211,7 @@ inputs = {
     "parse_results": _json_or_none(_a(13)),
     "scan_spec": _json_or_none(_a(14)),
     "auto_locate": _a(15) == "1",
-    "coverage_scope": _a(16) or "auto",
+    "coverage_scope": _a(16),
     "baseline": _a(17),
     "located_module": _a(18) or None,
     "degraded_reason": _a(19),

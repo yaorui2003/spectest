@@ -13,6 +13,9 @@ PASS/FAIL 判定）：比对"生产类清单 vs @Spec 标注"，对（非排除�
     python scan_spec_annotations.py --source <java_dir> --spec <spec.md> --json
     python scan_spec_annotations.py --source <java_dir> --spec <spec.md> \
         --test-source <test_dir> --exclude-patterns "legacy,*Helper" --json
+    python scan_spec_annotations.py --source <java_dir> --spec <spec.md> \
+        --test-source <test_dir> --config <testing-config.yml> --json
+        # --config 读 scan.unspec_exclude_patterns；--exclude-patterns 优先
 
 输出 JSON schema 见
 ``specs/001-speckit-testing-ext/contracts/spec-annotation.md`` 的"扫描契约"段。
@@ -347,6 +350,32 @@ def scan(
     }
 
 
+def _config_exclude_patterns(config_path: Path) -> str:
+    """从 testing-config.yml 读 ``scan.unspec_exclude_patterns`` 并规整为逗号分隔字符串。
+
+    复用 run_gate._load_config（同一最小 YAML 解析，保证与 run_gate 行为一致；
+    延迟 import 避免本脚本独立使用时引入 run_gate 模块）。值可为内联列表字符串
+    （``[legacy, "*Helper"]``）或逗号分隔字符串；[]/None/空 -> ""。config 文件
+    缺失/不可读 -> ""（_load_config 容错返回空 dict）。
+    """
+    try:
+        from run_gate import _load_config
+    except ImportError:
+        return ""
+    cfg = _load_config(config_path)
+    scan_cfg = cfg.get("scan", {}) if isinstance(cfg.get("scan"), dict) else {}
+    patterns = scan_cfg.get("unspec_exclude_patterns", [])
+    if isinstance(patterns, str):
+        patterns = [
+            p.strip()
+            for p in patterns.strip("[]").replace('"', "").replace("'", "").split(",")
+            if p.strip()
+        ]
+    elif not isinstance(patterns, list):
+        patterns = []
+    return ",".join(patterns)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="@Spec 注解扫描脚本：解析 .java 提取 @Spec 注解并比对 spec.md 规则。"
@@ -365,13 +394,24 @@ def main() -> int:
              "模式转成正则匹配类名后缀；UNSPEC_CODE 漂移告警为 MEDIUM，不阻断"
              "PASS/FAIL 判定",
     )
+    parser.add_argument(
+        "--config",
+        default="",
+        help="testing-config.yml 路径（可选）：存在时读 scan.unspec_exclude_patterns"
+             "作为额外排除模式的 config 默认；--exclude-patterns 显式提供时以 CLI 为准",
+    )
     args = parser.parse_args()
+
+    # v0.6 6.5/9.6 语义：CLI 非空用 CLI，否则回落 config scan.unspec_exclude_patterns
+    exclude_patterns = args.exclude_patterns
+    if not exclude_patterns and args.config:
+        exclude_patterns = _config_exclude_patterns(Path(args.config))
 
     result = scan(
         Path(args.source),
         Path(args.spec),
         Path(args.test_source) if args.test_source else None,
-        args.exclude_patterns,
+        exclude_patterns,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0

@@ -324,8 +324,8 @@ class TestGateV05Config:
 
 
 class TestGateV06ModuleLocate:
-    """v0.6 9.2: 步骤 1 多模块定位——`--project` 指向含 pom.xml 的模块目录，
-    find 探测，避免多模块根目录无 pom 误降级。"""
+    """beta 简化: 步骤 1 模块定位——AI MUST 先 find . -name pom.xml 将
+    --project 指向含 pom.xml 的模块目录；run_gate 不做模块自动探测。"""
 
     def test_body_has_project_flag_instruction(self):
         body = _read_body(GATE_MD.read_text(encoding="utf-8"))
@@ -333,14 +333,23 @@ class TestGateV06ModuleLocate:
         assert "pom.xml" in body
 
     def test_body_has_find_probe_instruction(self):
-        """不确定模块位置时用 find 探测 pom.xml。"""
+        """AI MUST 先 find . -name pom.xml 定位模块目录。"""
         body = _read_body(GATE_MD.read_text(encoding="utf-8"))
         assert "find . -name pom.xml" in body, "缺少 find . -name pom.xml 探测指令"
 
-    def test_body_mentions_module_auto_locate(self):
-        """run_gate 模块自动定位（_locate_module 递归探测）。"""
+    def test_body_ai_must_locate_module(self):
+        """AI MUST 先 find 定位含 pom.xml 的模块目录再传 --project。"""
         body = _read_body(GATE_MD.read_text(encoding="utf-8"))
-        assert "_locate_module" in body, "缺少 _locate_module 模块自动定位说明"
+        assert "MUST" in body, "模块定位必须是 MUST 级指令"
+        assert "find . -name pom.xml" in body
+        assert "--project" in body
+
+    def test_body_run_gate_no_auto_probe(self):
+        """run_gate 不做模块自动探测（POM 定位由 AI 负责）。"""
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "不做模块自动探测" in body, "必须声明 run_gate 不做模块自动探测"
+        assert "_locate_module" not in body, "已删除 _locate_module 模块自动定位"
+        assert "--auto-locate" not in body, "已删除 --auto-locate 参数"
 
 
 class TestGateV06FifthDimension:
@@ -400,3 +409,84 @@ class TestGateV06DriftDecisionMatrix:
         """漂移处置框架在 SOFT 段给建议归因，不自动改判 HARD 判定。"""
         body = _read_body(GATE_MD.read_text(encoding="utf-8"))
         assert "不自动改判" in body, "决策矩阵不得自动改判（SOFT 层）"
+
+
+# ── beta 简化: diff coverage 语义（替换 v0.6 9.4 作用域） ────────────────────
+
+
+class TestGateBetaDiffCoverage:
+    """beta 简化: diff coverage 语义——--diff-threshold（默认 80）与
+    --diff-base（MR merge-base，默认工作区 vs HEAD）；全量 mvn clean test
+    永远跑；无 git 回退全量阈值判定；无 Java 变更跳过。"""
+
+    def test_body_has_diff_threshold(self):
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "--diff-threshold" in body, "必须声明 --diff-threshold 参数"
+
+    def test_body_diff_threshold_default_80(self):
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "默认 80" in body, "diff-threshold 默认值必须为 80"
+
+    def test_body_has_diff_base(self):
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "--diff-base" in body, "必须声明 --diff-base 参数"
+
+    def test_body_diff_base_merge_base(self):
+        """--diff-base 用于 MR 场景（merge-base 对比）。"""
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "merge-base" in body, "diff-base 必须说明 merge-base 对比"
+
+    def test_body_diff_base_default_worktree_vs_head(self):
+        """默认工作区 vs HEAD（gate.md 中 '工作区 vs' 与 'HEAD' 可能跨行）。"""
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "工作区 vs" in body, "diff-base 默认必须为工作区 vs HEAD"
+        assert "HEAD" in body
+
+    def test_body_full_mvn_clean_test_always_runs(self):
+        """全量 mvn clean test 永远跑（回归盲区兜底）。"""
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "全量" in body and "永远跑" in body, "必须声明全量 mvn clean test 永远跑"
+
+    def test_body_no_git_fallback_all(self):
+        """无 git 仓库时回退全量聚合阈值判定。"""
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "无 git" in body, "必须声明无 git 回退全量阈值判定"
+        assert "回退全量" in body
+
+    def test_body_no_java_change_skip(self):
+        """无 Java 变更时该维度跳过（不 FAIL）。"""
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "无 Java 变更" in body, "必须声明无 Java 变更时跳过"
+        assert "跳过" in body
+
+    def test_body_removed_coverage_scope(self):
+        """已删除 --coverage-scope / --baseline 作用域方案。"""
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "--coverage-scope" not in body, "已删除 --coverage-scope 参数"
+        assert "--baseline" not in body, "已删除 --baseline 参数"
+
+
+# ── beta 简化: 降级新语义（无 java/mvn 或 --project 无 pom.xml） ─────────────
+
+
+class TestGateBetaDegradation:
+    """beta 简化: 降级语义 = 无 java/mvn 可执行 或 --project 指向目录无
+    pom.xml（AI 定位错误）。"""
+
+    def test_body_degraded_no_java_mvn(self):
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "无 java/mvn" in body, "降级语义必须含无 java/mvn"
+
+    def test_body_degraded_project_no_pom(self):
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "无 pom.xml" in body, "降级语义必须含 --project 目录无 pom.xml"
+
+    def test_body_degraded_ai_locate_error(self):
+        """--project 传错（目录无 pom.xml）即降级并提示。"""
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "定位错误" in body, "降级语义必须说明 --project 传错（AI 定位错误）"
+
+    def test_body_degraded_reason_field(self):
+        """降级时输出 degraded_reason。"""
+        body = _read_body(GATE_MD.read_text(encoding="utf-8"))
+        assert "degraded_reason" in body, "降级时必须输出 degraded_reason"

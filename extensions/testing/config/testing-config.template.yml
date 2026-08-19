@@ -19,11 +19,8 @@ gate:
     spec_rule_coverage_min: 100    # @Spec 注解覆盖 Spec 规则的比例（%）
     require_displayname_match: true # 单测 @DisplayName 必须与 @Spec 规则对齐
   ai_cross_validation: true  # v0.5 新增：是否启用 AI 交叉验证（默认 true）
-  coverage_scope: auto       # v0.6 新增：覆盖率判定作用域 auto | <pkg,...> | all
-                             #   auto=git diff 推导；<pkg,...>=显式顶层包列表；
-                             #   all=全量阈值（退化为现状语义）。run_gate --coverage-scope 可覆盖
-  baseline_file: ""          # v0.6 新增：非空启用 baseline 增量判定（作用域内类覆盖率快照，
-                             #   只查增量退化、绝对值不判；与 coverage_scope=all 互斥）
+  diff_coverage_threshold: 80   # 变更行覆盖率阈值（%），run_gate --diff-threshold 可覆盖
+  diff_base: ""                 # 非空 = MR 对比分支（git merge-base 定位 base），空 = 工作区 vs HEAD
 
 
 # 技术栈硬校验配置
