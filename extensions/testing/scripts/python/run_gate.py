@@ -110,13 +110,33 @@ def _compute_diff_coverage(mvn_dir: str, diff_base: str, source_lines: list) -> 
     """计算 MR/工作区变更行覆盖率（diff coverage，替代 v0.6 9.4 作用域方案）。
 
     git diff 行号提取：
-    - 无 ``diff_base``：``git diff --unified=0 HEAD -- <java 文件>``（工作区 vs HEAD）；
+    - 无 ``diff_base``：``git diff --unified=0 HEAD``（工作区 vs HEAD）；
     - 有 ``diff_base <branch>``：先 ``git merge-base <branch> HEAD`` 得 base，再
-      ``git diff --unified=0 <base> -- <java 文件>``（MR 场景）。
+      ``git diff --unified=0 <base>``（MR 场景）。
     解析 hunk 头 ``@@ -a,b +c,d @@``：U0 时新文件变更行 = c..c+d-1（d=0 为纯删除
-    行不算）。路径过滤 ``*.java``。
+    行不算）。
 
-    文件映射：对每个 diff java 文件解析 package 声明（``^\s*package\s+([\w.]+)\s*;``）
+    **多模块工程（修复 1）**：git diff 输出路径始终相对**仓库根**（如
+    ``backend/src/main/java/...``），而 ``--project`` 可能指向模块子目录
+    （``backend/``）。因此用 ``git rev-parse --show-toplevel``（cwd=mvn_dir）定位
+    ``repo_root``；git diff / git ls-files 在 cwd=mvn_dir 执行但**不带 pathspec
+    过滤**，收集全部变更 java 文件相对 repo_root 的路径；文件读取（解析 package
+    声明）用 ``repo_root / rel``。修复前 pathspec 相对 cwd 解析为
+    ``backend/backend/...`` 不匹配 -> 空 diff -> percent=None 静默跳过（P0）。
+
+    **只统计生产代码（修复 2）**：过滤掉路径含 ``/src/test/`` 的 java 文件
+    （jacoco 默认不插桩测试类，测试文件无行数据会被"声明即承诺"误判未覆盖 ->
+    纯补测试提交被 gate 阻断）。过滤后无生产代码变更 -> ``mode="no_changes"``。
+
+    **未跟踪新文件（修复 3）**：``git diff --name-only`` 不含工作区未跟踪文件；
+    用 ``git ls-files --others --exclude-standard`` 合并。未跟踪 java 文件无 HEAD
+    版本可 diff，其所有行（1..N，读文件行数）视为变更行——新文件全量计入。
+
+    **diff 提取失败（修复 5）**：java_files 非空但提取后 changed 为空（pathspec
+    全不匹配等）-> 返回 ``mode="fallback_all"``（保守，宁严勿松），而非静默
+    ``mode="diff"``+percent=None。
+
+    文件映射：对每个变更 java 文件解析 package 声明（``^\s*package\s+([\w.]+)\s*;``）
     + 文件名构造 key（``package.replace('.','/') + "/" + basename``，如
     ``com/example/AccountService.java``），与 source_lines 的 key 匹配；找不到
     （未编译/无 jacoco 数据）-> 该文件所有变更行计为未覆盖（声明即承诺，保守方向）。
@@ -124,10 +144,26 @@ def _compute_diff_coverage(mvn_dir: str, diff_base: str, source_lines: list) -> 
     返回：
     - ``{"mode": "diff", "base": <base 描述>, "total_lines": n, "covered_lines": m,
        "percent": x|None}``；
-    - ``{"mode": "fallback_all", ...}``：git 不可用/非 git 仓库/超时/失败；
-    - ``{"mode": "no_changes", ...}``：git 正常但无 java 变更行。
+    - ``{"mode": "fallback_all", ...}``：git 不可用/非 git 仓库/超时/失败/提取失败；
+    - ``{"mode": "no_changes", ...}``：git 正常但无生产代码 java 变更行。
     """
     empty = {"mode": "fallback_all", "base": "", "total_lines": 0, "covered_lines": 0, "percent": None}
+
+    # 0. 定位仓库根（修复 1）：git 命令 cwd 可保持 mvn_dir，但 pathspec 与文件
+    #    读取必须用相对 repo_root 的路径。非 git 仓库 -> fallback_all。
+    try:
+        tr = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=mvn_dir, capture_output=True, text=True, timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return empty
+    if tr.returncode != 0:
+        return empty
+    repo_root = tr.stdout.strip()
+    if not repo_root:
+        return empty
+
     # 1. 定位 base（无 diff_base 用 HEAD）
     if diff_base:
         try:
@@ -143,7 +179,7 @@ def _compute_diff_coverage(mvn_dir: str, diff_base: str, source_lines: list) -> 
     else:
         base = "HEAD"
 
-    # 2. 变更 java 文件列表
+    # 2. 变更 java 文件列表（相对 repo_root；不带 pathspec 过滤，修复 1）
     try:
         proc = subprocess.run(
             ["git", "diff", "--name-only", base],
@@ -154,16 +190,40 @@ def _compute_diff_coverage(mvn_dir: str, diff_base: str, source_lines: list) -> 
     if proc.returncode != 0:
         return empty
     java_files = [line.strip() for line in proc.stdout.splitlines() if line.strip().endswith(".java")]
-    if not java_files:
+
+    # 3. 未跟踪 java 文件（修复 3）：git ls-files --others --exclude-standard
+    #    在 cwd=repo_root 执行（输出相对 repo_root，与 diff 路径基准一致；
+    #    cwd=mvn_dir 时输出相对 cwd，会与 diff 的 repo_root 相对路径错位）
+    try:
+        ut = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard"],
+            cwd=repo_root, capture_output=True, text=True, timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return empty
+    if ut.returncode != 0:
+        return empty
+    untracked = [line.strip() for line in ut.stdout.splitlines() if line.strip().endswith(".java")]
+    java_files = list(dict.fromkeys(java_files + untracked))
+
+    # 只统计生产代码（修复 2）：过滤 src/test/ 路径
+    prod_files = [rel for rel in java_files if "/src/test/" not in "/" + rel]
+    if not prod_files:
         return {"mode": "no_changes", "base": base, "total_lines": 0, "covered_lines": 0, "percent": None}
 
-    # 3. 逐文件提取变更行号：{相对路径: set(行号)}
+    # 4. 逐文件提取变更行号：{相对 repo_root 路径: set(行号)}
     changed: dict[str, set[int]] = {}
-    for rel in java_files:
+    for rel in prod_files:
+        if rel in untracked:
+            # 未跟踪新文件：所有行视为变更（1..N）
+            n = len(_safe_read(Path(repo_root) / rel).splitlines())
+            if n > 0:
+                changed[rel] = set(range(1, n + 1))
+            continue
         try:
             dp = subprocess.run(
                 ["git", "diff", "--unified=0", base, "--", rel],
-                cwd=mvn_dir, capture_output=True, text=True, timeout=60,
+                cwd=repo_root, capture_output=True, text=True, timeout=60,
             )
         except (OSError, subprocess.TimeoutExpired):
             return empty
@@ -178,7 +238,11 @@ def _compute_diff_coverage(mvn_dir: str, diff_base: str, source_lines: list) -> 
         if lines:
             changed[rel] = lines
 
-    # 4. source_lines 索引：key -> {nr: ci}
+    # 5. 提取失败（修复 5）：java_files 非空但 changed 为空 -> fallback_all
+    if not changed:
+        return empty
+
+    # 6. source_lines 索引：key -> {nr: ci}
     line_index: dict[str, dict[int, int]] = {}
     for entry in source_lines:
         if not isinstance(entry, dict):
@@ -192,12 +256,12 @@ def _compute_diff_coverage(mvn_dir: str, diff_base: str, source_lines: list) -> 
             if isinstance(nr, int):
                 per_line[nr] = int(ln.get("ci", 0))
 
-    # 5. 汇总：变更行覆盖 = 行存在且 ci>0；缺失（未编译/无数据）视为未覆盖
+    # 7. 汇总：变更行覆盖 = 行存在且 ci>0；缺失（未编译/无数据）视为未覆盖
     total_lines = 0
     covered_lines = 0
     for rel, linenos in changed.items():
         total_lines += len(linenos)
-        pkg_m = _PACKAGE_DECL_RE.search(_safe_read(Path(mvn_dir) / rel))
+        pkg_m = _PACKAGE_DECL_RE.search(_safe_read(Path(repo_root) / rel))
         if pkg_m is None:
             continue  # 无 package 声明：全部变更行视为未覆盖
         key = pkg_m.group(1).replace(".", "/") + "/" + Path(rel).name
@@ -610,7 +674,10 @@ def run(inputs: dict) -> dict:
     gate_cfg = cfg.get("gate", {}) if isinstance(cfg.get("gate"), dict) else {}
     if diff_threshold is None or diff_threshold == "":
         diff_threshold = gate_cfg.get("diff_coverage_threshold", 80)
-    diff_threshold = int(diff_threshold)
+    try:
+        diff_threshold = int(diff_threshold)
+    except (TypeError, ValueError):
+        diff_threshold = 80  # config 非法值兜底默认
     if not diff_base:
         diff_base = str(gate_cfg.get("diff_base") or "")
 
@@ -920,7 +987,8 @@ def main() -> int:
     parser.add_argument(
         "--diff-threshold",
         default=None,
-        help="变更行覆盖率阈值（%%），默认取 config gate.diff_coverage_threshold（缺省 80）",
+        type=int,
+        help="变更行覆盖率阈值（%%），默认取 config gate.diff_coverage_threshold（缺省 80）；范围 0-100",
     )
     parser.add_argument(
         "--diff-base",
@@ -929,6 +997,14 @@ def main() -> int:
     )
     parser.add_argument("--json", action="store_true", help="输出判定 JSON 到 stdout（固定开启）")
     args = parser.parse_args()
+
+    # 修复 4：--diff-threshold 范围校验（0-100），越界 stderr 报错 exit 2
+    if args.diff_threshold is not None and not (0 <= args.diff_threshold <= 100):
+        print(
+            f"错误: --diff-threshold 必须在 0-100 之间（收到 {args.diff_threshold}）",
+            file=sys.stderr,
+        )
+        return 2
 
     feature_dir = Path(args.feature_dir)
     impact_ok = (feature_dir / "docs" / "impact-report.md").is_file()

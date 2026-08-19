@@ -175,6 +175,62 @@ _JAVA_V2 = (
     "}\n"
 )
 
+# 多 hunk 场景样本：V1 commit 后改 V2，两处不相邻各加 1 行（新文件行 6 与 25）
+_MULTI_HUNK_V1 = (
+    "package com.example;\n"
+    "\n"
+    "public class Multi {\n"
+    "    public void a() {}\n"
+    "    public void b() {}\n"
+    "    public void c() {}\n"
+    "    public void d() {}\n"
+    "    public void e() {}\n"
+    "    public void f() {}\n"
+    "    public void g() {}\n"
+    "    public void h() {}\n"
+    "    public void i() {}\n"
+    "    public void j() {}\n"
+    "    public void k() {}\n"
+    "    public void l() {}\n"
+    "    public void m() {}\n"
+    "    public void n() {}\n"
+    "    public void o() {}\n"
+    "    public void p() {}\n"
+    "    public void q() {}\n"
+    "    public void r() {}\n"
+    "    public void s() {}\n"
+    "    public void t() {}\n"
+    "}\n"
+)
+_MULTI_HUNK_V2 = (
+    "package com.example;\n"
+    "\n"
+    "public class Multi {\n"
+    "    public void a() {}\n"
+    "    public void b() {}\n"
+    "    public void b2() {}\n"
+    "    public void c() {}\n"
+    "    public void d() {}\n"
+    "    public void e() {}\n"
+    "    public void f() {}\n"
+    "    public void g() {}\n"
+    "    public void h() {}\n"
+    "    public void i() {}\n"
+    "    public void j() {}\n"
+    "    public void k() {}\n"
+    "    public void l() {}\n"
+    "    public void m() {}\n"
+    "    public void n() {}\n"
+    "    public void o() {}\n"
+    "    public void p() {}\n"
+    "    public void q() {}\n"
+    "    public void r() {}\n"
+    "    public void s() {}\n"
+    "    public void t() {}\n"
+    "    public void t2() {}\n"
+    "}\n"
+)
+
 
 # ── 样本 Java 生成 ──────────────────────────────────────────────────────────
 
@@ -996,6 +1052,188 @@ def test_run_full_mode_diff_threshold_from_config(gate_fixture, git_repo):
     assert result["diff_threshold"] == 30
     assert result["diff_coverage"]["percent"] == 50
     assert result["status"] == "PASS", result["fail_reasons"]
+
+
+def test_run_full_mode_diff_multi_module_subdir(gate_fixture, git_repo):
+    """多模块子目录（修复 1 回归锁）：--project=backend/ 时 diff 以仓库根为基准。
+
+    git 仓库根下建 backend/pom.xml + backend/src/main/java/.../AccountService.java，
+    commit 后改文件加 2 行；--project=<repo>/backend -> diff_coverage.percent=50。
+    修复前 pathspec 相对 cwd 解析为 backend/backend/... 不匹配 -> percent=None 静默跳过。
+    """
+    _make_full_mode_reports(gate_fixture)
+    # 模块子目录：backend/pom.xml + 生产代码
+    backend_dir = gate_fixture["tmp_path"] / "backend"
+    backend_dir.mkdir(parents=True, exist_ok=True)
+    (backend_dir / "pom.xml").write_text("<project/>", encoding="utf-8")
+    f = _commit_java_file(
+        gate_fixture["tmp_path"],
+        "backend/src/main/java/com/example/AccountService.java",
+        _JAVA_V1,
+    )
+    f.write_text(_JAVA_V2, encoding="utf-8")  # 新增 2 行（新文件行 5-6）
+    rg = _load_run_gate_module()
+    inputs = _full_mode_inputs(gate_fixture)
+    inputs["project"] = str(gate_fixture["tmp_path"] / "backend")  # --project=backend/
+    inputs["parse_results"]["source_lines"] = _make_jacoco_source_lines(
+        "com/example/AccountService.java", covered=[5], total=[5, 6]
+    )
+    result = rg.run(inputs)
+    assert result["diff_coverage"]["mode"] == "diff"
+    assert result["diff_coverage"]["total_lines"] == 2
+    assert result["diff_coverage"]["covered_lines"] == 1
+    assert result["diff_coverage"]["percent"] == 50
+    assert result["status"] == "FAIL"  # 阈值 80
+    assert any("diff coverage 50% < 80%" in r for r in result["fail_reasons"]), (
+        result["fail_reasons"]
+    )
+
+
+def test_run_full_mode_diff_multi_hunk(gate_fixture, git_repo):
+    """多 hunk 场景：同一文件两处不相邻修改各加 1 行，jacoco 覆盖其中 1 行 -> percent=50。
+
+    验证 hunk 解析多段累加正确（@@ -5,0 +6 @@ 与 @@ -23,0 +25 @@ 各 1 行）。
+    """
+    _make_full_mode_reports(gate_fixture)
+    f = _commit_java_file(gate_fixture["tmp_path"], "com/example/Multi.java", _MULTI_HUNK_V1)
+    f.write_text(_MULTI_HUNK_V2, encoding="utf-8")  # 新文件行 6 与 25 各加 1 行
+    rg = _load_run_gate_module()
+    inputs = _full_mode_inputs(gate_fixture)
+    inputs["parse_results"]["source_lines"] = _make_jacoco_source_lines(
+        "com/example/Multi.java", covered=[6], total=[6, 25]
+    )
+    result = rg.run(inputs)
+    assert result["diff_coverage"]["mode"] == "diff"
+    assert result["diff_coverage"]["total_lines"] == 2
+    assert result["diff_coverage"]["covered_lines"] == 1
+    assert result["diff_coverage"]["percent"] == 50
+    assert result["status"] == "FAIL"  # 阈值 80
+    assert any("diff coverage 50% < 80%" in r for r in result["fail_reasons"]), (
+        result["fail_reasons"]
+    )
+
+
+def test_run_full_mode_diff_only_test_files_no_changes(gate_fixture, git_repo):
+    """只改测试文件（修复 2 回归）：src/test/... 路径不参与 diff coverage -> no_changes 且 PASS。"""
+    _make_full_mode_reports(gate_fixture)
+    # 先 commit 一个生产文件（保证仓库有基线），再只改测试文件
+    _commit_java_file(gate_fixture["tmp_path"], "com/example/AccountService.java", _JAVA_V1)
+    test_f = _commit_java_file(
+        gate_fixture["tmp_path"],
+        "src/test/java/com/example/AccountServiceTest.java",
+        "package com.example;\n\nclass AccountServiceTest {}\n",
+        msg="add test",
+    )
+    test_f.write_text(
+        "package com.example;\n\nclass AccountServiceTest {\n    void t() {}\n}\n",
+        encoding="utf-8",
+    )  # 只改测试文件
+    rg = _load_run_gate_module()
+    inputs = _full_mode_inputs(gate_fixture)
+    inputs["parse_results"]["source_lines"] = []
+    result = rg.run(inputs)
+    assert result["diff_coverage"]["mode"] == "no_changes"
+    assert result["status"] == "PASS", result["fail_reasons"]
+    thr = {t["metric"]: t for t in result["threshold_results"]}
+    assert thr["diff_coverage"]["pass"] is True
+
+
+def test_run_full_mode_diff_untracked_new_file(gate_fixture, git_repo):
+    """未跟踪新文件（修复 3 回归）：新建未跟踪 java 文件，jacoco 覆盖 1/6 行 -> percent=17。"""
+    _make_full_mode_reports(gate_fixture)
+    # 先 commit 一个基线文件建立 HEAD（git diff --name-only HEAD 需要 HEAD 存在）
+    _commit_java_file(gate_fixture["tmp_path"], "com/example/Base.java", _JAVA_V1)
+    # 未跟踪新文件：不 commit，直接写文件（git ls-files --others 捕获）
+    new_file = gate_fixture["tmp_path"] / "com/example/NewService.java"
+    new_file.parent.mkdir(parents=True, exist_ok=True)
+    new_file.write_text(
+        "package com.example;\n\npublic class NewService {\n    public void a() {}\n"
+        "    public void b() {}\n}\n",
+        encoding="utf-8",
+    )  # 6 行（1..6 全视为变更行）
+    rg = _load_run_gate_module()
+    inputs = _full_mode_inputs(gate_fixture)
+    inputs["parse_results"]["source_lines"] = _make_jacoco_source_lines(
+        "com/example/NewService.java", covered=[4], total=[1, 2, 3, 4, 5, 6]
+    )
+    result = rg.run(inputs)
+    assert result["diff_coverage"]["mode"] == "diff"
+    assert result["diff_coverage"]["total_lines"] == 6
+    assert result["diff_coverage"]["covered_lines"] == 1
+    assert result["diff_coverage"]["percent"] == round(1 / 6 * 100)
+    assert result["status"] == "FAIL"  # 阈值 80
+
+
+def test_run_full_mode_diff_untracked_new_file_no_jacoco_fail(gate_fixture, git_repo):
+    """未跟踪新文件无 jacoco 数据 -> 变更行全未覆盖 percent=0 -> FAIL。"""
+    _make_full_mode_reports(gate_fixture)
+    _commit_java_file(gate_fixture["tmp_path"], "com/example/Base.java", _JAVA_V1)
+    new_file = gate_fixture["tmp_path"] / "com/example/NewService.java"
+    new_file.parent.mkdir(parents=True, exist_ok=True)
+    new_file.write_text(
+        "package com.example;\n\npublic class NewService {\n    public void a() {}\n"
+        "    public void b() {}\n}\n",
+        encoding="utf-8",
+    )
+    rg = _load_run_gate_module()
+    inputs = _full_mode_inputs(gate_fixture)
+    inputs["parse_results"]["source_lines"] = []  # 无行级数据
+    result = rg.run(inputs)
+    assert result["diff_coverage"]["mode"] == "diff"
+    assert result["diff_coverage"]["total_lines"] == 6
+    assert result["diff_coverage"]["covered_lines"] == 0
+    assert result["diff_coverage"]["percent"] == 0
+    assert result["status"] == "FAIL"
+    assert any("diff coverage 0% < 80%" in r for r in result["fail_reasons"]), (
+        result["fail_reasons"]
+    )
+
+
+def test_run_full_mode_diff_deleted_file_fallback_all(gate_fixture, git_repo):
+    """纯删除 java 文件（修复 5 语义）：仅 - 行（count=0）-> changed 为空 -> fallback_all。"""
+    _make_full_mode_reports(gate_fixture)
+    f = _commit_java_file(gate_fixture["tmp_path"], "com/example/AccountService.java", _JAVA_V1)
+    _git(gate_fixture["tmp_path"], "rm", "-q", str(f.relative_to(gate_fixture["tmp_path"])))
+    rg = _load_run_gate_module()
+    inputs = _full_mode_inputs(gate_fixture)
+    inputs["parse_results"]["source_lines"] = []
+    result = rg.run(inputs)
+    assert result["diff_coverage"]["mode"] == "fallback_all"
+    assert result["status"] == "PASS", result["fail_reasons"]  # 全量聚合达标
+
+
+def test_cli_diff_threshold_out_of_range_exit_2(gate_fixture):
+    """--diff-threshold 越界（150）-> exit 2，stderr 报错。"""
+    rc, stdout, stderr = _run_py([
+        "--source", str(gate_fixture["src"]),
+        "--test-source", str(gate_fixture["test_src"]),
+        "--spec", str(gate_fixture["spec"]),
+        "--project", str(gate_fixture["tmp_path"]),
+        "--feature-dir", str(gate_fixture["feature_dir"]),
+        "--config", str(gate_fixture["config"]),
+        "--diff-threshold", "150",
+        "--json",
+    ])
+    assert rc == 2
+    assert "0-100" in stderr
+    assert stdout.strip() == "", "越界不应输出判定 JSON"
+
+
+def test_cli_diff_threshold_non_int_exit_2(gate_fixture):
+    """--diff-threshold 非整数（abc）-> argparse type=int 报错 exit 2。"""
+    rc, stdout, stderr = _run_py([
+        "--source", str(gate_fixture["src"]),
+        "--test-source", str(gate_fixture["test_src"]),
+        "--spec", str(gate_fixture["spec"]),
+        "--project", str(gate_fixture["tmp_path"]),
+        "--feature-dir", str(gate_fixture["feature_dir"]),
+        "--config", str(gate_fixture["config"]),
+        "--diff-threshold", "abc",
+        "--json",
+    ])
+    assert rc == 2
+    assert "invalid int value" in stderr
+    assert stdout.strip() == "", "非法值不应输出判定 JSON"
 
 
 # ── 用例 (l): v0.6 UNSPEC_CODE 漂移告警对接 ───────────────────────────────

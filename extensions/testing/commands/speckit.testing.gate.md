@@ -1,16 +1,17 @@
 ---
 description: "Speckit Testing 门禁：AI 调用 run_gate 脚本（mvn clean test + 技术栈校验 + @Spec 扫描 + DisplayName 一致性 + 关键路径对抗用例硬判 + 按风险阈值判定），AI 仅读判定 JSON 输出阻断/通过指令 + AI 语义交叉验证（SOFT，不改判）"
 scripts:
-  sh: ../../scripts/bash/run-gate.sh
-  ps: ../../scripts/powershell/run-gate.ps1
   py: ../../scripts/python/run_gate.py
+  # DEPRECATED (beta 阶段)：sh/ps 版已弃用，仅保留供参考，不再维护。
+  # sh: ../../scripts/bash/run-gate.sh
+  # ps: ../../scripts/powershell/run-gate.ps1
 ---
 
 # Speckit Testing Gate
 
 本命令为 `after_implement` 钩子（`optional: false`，强制自动执行）的门禁。
 代码实现完成后立即触发。**v0.4 起门禁的全部确定性逻辑已下沉到 `run_gate`
-编排脚本**（三语言 sh/ps/py 字节级等价）：脚本执行 `mvn clean test` + 调用
+编排脚本**（python 唯一实现，sh/ps 已弃用）**：脚本执行 `mvn clean test` + 调用
 4 个扫描脚本（scan_test_stack / parse_test_results / scan_spec_annotations）+
 内联解析 @DisplayName + 按 `ImpactReport.risk_level` 套用
 `testing-config.yml` 阈值 + 判定 PASS/FAIL + 直接写 gate-result.md。
@@ -98,8 +99,8 @@ scripts:
 
 ### 步骤 1：调用 run_gate 脚本
 
-运行 frontmatter `scripts:` 段声明的 `run_gate` 脚本（按项目 `--script
-sh|ps|py` 选择其一），脚本内部按以下 10 步执行（供 AI 理解脚本行为，AI
+运行 frontmatter `scripts:` 段声明的 `run_gate` 脚本（python 唯一实现，
+sh/ps 已弃用），脚本内部按以下 10 步执行（供 AI 理解脚本行为，AI
 **不要**自行重复执行）：
 
 **前置检查（MUST，beta 简化）**：
@@ -139,7 +140,7 @@ run_gate --source <java_dir> --test-source <test_dir> --spec <spec.md> \
 | 5 | 内联解析测试源码 `@DisplayName`，**双向**对齐（DisplayName->@Spec + @Spec->DisplayName） | 不对齐数 > 0 或有 `@Spec` 无测试的规则，且 `require_displayname_match` -> FAIL |
 | 5.5 | 关键路径对抗校验（v0.5，configurable）：读 impact-report 逐规则 risk + 检测 `@DisplayName("Rn-对抗-...")` 对抗用例 | `critical_path_required=true` 且 high 风险规则 0 对抗用例 -> FAIL；`false` 跳过（降级） |
 | 6 | 读 `impact-report.md` 的 `risk_level` + 读 `testing-config.yml` | 套风险档阈值 |
-| 7 | 逐项比对覆盖率（全量聚合 + diff coverage 变更行，若适用）/ 通过率 / Spec 覆盖率与阈值 | 任一不达标 -> FAIL |
+| 7 | 覆盖率判定：有 git 且存在生产代码变更行时按 diff coverage（变更行覆盖率）判定；无 git 时回退全量聚合阈值判定；无生产代码变更时该维度跳过（PASS） | 任一不达标 -> FAIL |
 | 8 | **脚本直接写 `specs/<feature>/docs/gate-result.md`** + stdout 输出判定 JSON；写前只读正则检查 SOFT 标题存在性，缺则 WARN + `soft_missing: true`（不 FAIL） | AI 仅读，不能改判 |
 
 ### 步骤 2：读取判定 JSON 并输出指令
@@ -257,8 +258,9 @@ gate FAIL 后**先归因 T1/T2**（见"T1/T2 双门禁框架"推论），再按�
 **单测与契约测试（mvn clean test）**：脚本在项目根目录执行 `mvn clean test`
 （强制 clean 杜绝 `target/` 残留旧 jacoco 污染），收集：
 
-- **单测明细**：总数 / 通过 / 失败 / 行覆盖率 / 分支覆盖率 / 通过率
-  （覆盖率取自 JaCoCo 报告 `target/site/jacoco/jacoco.xml`）
+- **单测明细**：总数 / 通过 / 失败 / diff coverage（变更行覆盖率，取自
+  JaCoCo 行级数据 `source_lines`）/ 通过率（覆盖率取自 JaCoCo 报告
+  `target/site/jacoco/jacoco.xml`）
 - **契约测试明细**：总数 / 通过 / 失败 / 通过率（契约测试以 `CT-` 前缀命名
   或位于 `src/test/java/.../contracts/` 包下识别）
 
@@ -268,7 +270,7 @@ gate FAIL 后**先归因 T1/T2**（见"T1/T2 双门禁框架"推论），再按�
 参考"段），不降级跳过。
 
 **技术栈硬校验（scan_test_stack）**：脚本调用
-`scripts/{bash,powershell,python}/scan-test-stack.{sh,ps1,py}`，扫描
+`scripts/python/scan_test_stack.py`，扫描
 `src/test/` 下全部 `.java` 测试文件，检出禁用技术：
 
 - `org.powermock.*` 导入 -> type: powermock
@@ -279,7 +281,7 @@ gate FAIL 后**先归因 T1/T2**（见"T1/T2 双门禁框架"推论），再按�
 WireMock 契约测试。
 
 **@Spec 注解扫描（scan_spec_annotations）**：脚本调用
-`scripts/{bash,powershell,python}/scan-spec-annotations.{sh,ps1,py}`，解析
+`scripts/python/scan_spec_annotations.py`，解析
 用户项目全部 `.java` 源文件，正则提取 `@Spec(capability="...", rule="Rn",
 ...)` 注解，同时解析 `spec.md` 的 `business_rules` 规则编号，输出 JSON：
 
@@ -319,7 +321,9 @@ WireMock 契约测试。
 
 **按风险等级套用阈值**：脚本读取 `ImpactReport.risk_level`（`high` /
 `medium` / `low`），按 `testing-config.yml` 的 `risk_overrides` 与 `gate`
-默认值合并后套用（覆盖值优先）：
+默认值合并后套用（覆盖值优先）。**diff 模式只判 diff coverage + 通过率 +
+Spec 覆盖率**；下表全量五指标（行/分支/方法/指令/复杂度）仅在**无 git 回退
+全量聚合阈值判定**（fallback_all）时生效：
 
 | 风险 | 行覆盖率 | 分支覆盖率 | 方法覆盖率 | 指令覆盖率 | 复杂度覆盖率 | 单测通过率 | 契约通过率 | Spec 覆盖率 |
 |------|----------|------------|------------|------------|--------------|------------|------------|-------------|
@@ -335,7 +339,7 @@ WireMock 契约测试。
 - `unimplemented_rules` 非空（spec 规则未实现）
 - `orphan_annotations` 非空（孤儿注解）
 - 单测通过率 < 阈值
-- 行覆盖率 / 分支覆盖率 < 阈值
+- diff coverage < 阈值（无 git 时回退行覆盖率 / 分支覆盖率等全量指标 < 阈值）
 - 契约测试通过率 < 阈值
 - `require_displayname_match` 为 true 且 `displayname_mismatch_count` > 0
 - `require_displayname_match` 为 true 且 `untested_spec_rules` 非空（有 `@Spec` 无对应测试）
@@ -388,14 +392,14 @@ JaCoCo（prepare-agent + report）：
 
 ### 执行环境
 - mvn clean test: SUCCESS | FAIL
-- target 清理: 已清理（杜绝残留污染）
-- 模块定位: backend/（--project 指定）| 未找到（degraded_reason: ...）
+- target 清理: 已清理（杜绝残留污染）（非降级时）
+- 降级模式: 降级模式（无 java/mvn 或 --project 目录无 pom.xml）| 降级原因: <degraded_reason>（仅降级时）
 
 ### 单测明细
 - 总数: N | 通过: N | 失败: N
-- 行覆盖率: NN% (阈值 >=NN%) | 分支: NN% | 方法: NN% | 指令: NN% | 复杂度: NN%
-- 变更行覆盖率 (diff): NN% (阈值 >=NN%) | diff-base: HEAD | 未应用（无 git / 无 Java 变更）
-- 通过率: NN% (阈值 100%)
+- diff coverage: NN% (变更行 X/Y, base: <diff-base>) | 阈值 >= NN%
+  （四态：diff / 无 Java 变更行，跳过（无承诺）/ 无 git，回退全量阈值判定 / N/A（降级模式））
+- 通过率: NN% (阈值 >= NN%)
 
 ### 契约测试明细
 - 总数: N | 通过: N | 失败: N | 通过率: NN%
@@ -404,12 +408,16 @@ JaCoCo（prepare-agent + report）：
 - 规则总数: N | 已注解数: N | 未实现规则: [] | 孤儿注解: []
 - DisplayName 对齐数: N / N
 
+### 关键路径对抗覆盖
+- critical_path_required: true | high 风险规则: [R1, R6] | 对抗用例分布: {R1: 1, R6: 1}
+- 缺对抗用例的 high 风险规则: []（仅 FAIL 时列出）
+
 ### 判定依据
 - risk_level: high | medium | low | default
 - 套用阈值来源: testing-config.yml risk_overrides.<risk>
 
 ### 失败原因与修复建议（仅 FAIL 时）
-- [FAIL] line_coverage 65% < 90% (high) -> 补 XxxService.transfer 的边界用例
+- [FAIL] diff coverage 65% < 80% (变更行 13/20) -> 补 XxxService.transfer 的边界用例
 ```
 
 ## 契约不变量
@@ -443,11 +451,10 @@ EXECUTE_COMMAND: speckit.testing.gate
 -maxdepth 3`（或已知工程结构）把 `--project` 指向含 pom.xml 的模块目录
 （如 `backend/`），传错（无 pom）即降级。
 
-脚本降级时输出 `degraded_reason`（如 `pom.xml not found at <path>` 或
-`no java/mvn on PATH`），gate-result.md"执行环境"段标注
-`模块定位: 未找到（degraded_reason: ...）`；stdout JSON 同时含
-`suggestion` 字段（降级时给具体建议命令，如
-`run_gate --project backend --spec specs/... --gate-result ...`）。
+脚本降级时输出 `degraded_reason` 字段说明降级原因（如 `pom.xml not found
+at <path>（AI 应先 find . -name pom.xml 定位模块目录再传对 --project）`
+或 `no java/mvn on PATH`），gate-result.md"执行环境"段标注
+`降级原因: <degraded_reason>`。
 
 降级时脚本**仅做 `@Spec` 静态扫描**，跳过 `mvn clean test` 与 @DisplayName
 解析（因无单测可读），仅执行 @Spec 注解扫描与 Spec 覆盖率阈值判定
@@ -499,7 +506,7 @@ EXECUTE_COMMAND: __SPECKIT_COMMAND_TESTING_REPORT__
 
 ## Done When
 
-- [ ] 已调用 `run_gate` 脚本（frontmatter `scripts:` 段声明，按 `--script` 选择）
+- [ ] 已调用 `run_gate` 脚本（frontmatter `scripts:` 段声明，python 唯一实现）
 - [ ] 已读取 run_gate stdout 判定 JSON（PASS 或 FAIL）
 - [ ] FAIL 时已输出阻断指令（引用 gate-result.md 失败原因与修复建议）
 - [ ] PASS 时已输出通过指令 + report 命令提示（令牌）

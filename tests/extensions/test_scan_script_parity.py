@@ -933,6 +933,77 @@ def test_parse_test_results_py(tmp_path: Path):
     assert "classes" not in data
 
 
+# 含 <package>/<sourcefile>/<line> 的 jacoco.xml：验证 source_lines 内容契约。
+# - 2 个 package（com/example、com/other），各 1 个 sourcefile；
+# - com/example/AccountService.java 多行且 nr 乱序（7/10/42）验证升序；
+# - com/example/NoLines.java 无 <line> 元素 -> 不应出现在 source_lines；
+# - com/other/AccountService.java 与 com/example 同名 -> key 含 package 前缀区分。
+_PTR_JACOCO_SOURCE_LINES_XML = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<report>
+  <counter type="LINE" missed="5" covered="50"/>
+  <package name="com/example">
+    <sourcefile name="AccountService.java">
+      <line nr="42" mi="0" ci="5"/>
+      <line nr="10" mi="2" ci="0"/>
+      <line nr="7" mi="1" ci="3"/>
+    </sourcefile>
+    <sourcefile name="NoLines.java">
+    </sourcefile>
+  </package>
+  <package name="com/other">
+    <sourcefile name="AccountService.java">
+      <line nr="1" mi="0" ci="1"/>
+    </sourcefile>
+  </package>
+</report>
+"""
+
+
+def test_parse_test_results_source_lines_content(tmp_path: Path):
+    """parse_test_results: source_lines 内容契约（key 格式 / nr 升序 / mi/ci / 过滤 / 同名区分）。
+
+    P1-4：现有 fixture 只有顶层 counter，source_lines 键从未被内容断言。
+    本用例用含 <package>/<sourcefile>/<line> 的 jacoco.xml 验证：
+    - key = package 点转斜杠 + "/" + 文件名（com/example/AccountService.java）；
+    - lines 按 nr 升序（7/10/42）；
+    - mi/ci 取值正确；
+    - 无 <line> 的 sourcefile（NoLines.java）不出现在输出；
+    - 两个 package 同名 sourcefile（AccountService.java）key 含 package 前缀区分。
+    """
+    sf_dir = tmp_path / "surefire-reports"
+    sf_dir.mkdir()
+    (sf_dir / "TEST-AccountServiceTest.xml").write_text(_PTR_SUREFIRE_XML, encoding="utf-8")
+    jacoco = tmp_path / "jacoco.xml"
+    jacoco.write_text(_PTR_JACOCO_SOURCE_LINES_XML, encoding="utf-8")
+
+    data = json.loads(_ptr_run_py(sf_dir, jacoco))
+    sl = data["source_lines"]
+    # 2 个有行级数据的 sourcefile（NoLines.java 被过滤）
+    assert len(sl) == 2
+
+    by_key = {e["key"]: e for e in sl}
+    # com/example/AccountService.java：多行 + nr 升序 + mi/ci 正确
+    ex = by_key["com/example/AccountService.java"]
+    assert ex["package"] == "com/example"
+    assert ex["file"] == "AccountService.java"
+    assert [l["nr"] for l in ex["lines"]] == [7, 10, 42]  # 升序
+    assert ex["lines"][0] == {"nr": 7, "mi": 1, "ci": 3}
+    assert ex["lines"][1] == {"nr": 10, "mi": 2, "ci": 0}
+    assert ex["lines"][2] == {"nr": 42, "mi": 0, "ci": 5}
+    # 无 <line> 的 sourcefile 不在输出中
+    assert "com/example/NoLines.java" not in by_key
+    # 同名 sourcefile 在不同 package -> key 含 package 前缀区分
+    other = by_key["com/other/AccountService.java"]
+    assert other["package"] == "com/other"
+    assert other["lines"] == [{"nr": 1, "mi": 0, "ci": 1}]
+    # key 唯一性：两个同名文件 key 不同
+    assert set(by_key.keys()) == {
+        "com/example/AccountService.java",
+        "com/other/AccountService.java",
+    }
+
+
 # ── scan_test_stack 契约 ───────────────────────────────────────────────────
 
 _STS_POWERMOCK_JAVA = """\

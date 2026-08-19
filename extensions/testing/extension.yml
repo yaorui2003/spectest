@@ -63,23 +63,23 @@ provides:
     - name: scan-spec-annotations
       file: scripts/python/scan_spec_annotations.py
       description: "@Spec 注解扫描脚本（Python 推荐）"
-      runtimes: [python, bash, powershell]
+      runtimes: [python]
     - name: validate-spec-format
       file: scripts/python/validate_spec_format.py
       description: "spec.md 格式验证脚本（Business Rules 段 + 规则编号连续性）"
-      runtimes: [python, bash, powershell]
+      runtimes: [python]
     - name: parse-test-results
       file: scripts/python/parse_test_results.py
       description: "Surefire + JaCoCo 测试结果解析脚本"
-      runtimes: [python, bash, powershell]
+      runtimes: [python]
     - name: scan-test-stack
       file: scripts/python/scan_test_stack.py
       description: "测试技术栈硬校验脚本（禁 PowerMock / @SpringBootTest）"
-      runtimes: [python, bash, powershell]
+      runtimes: [python]
     - name: run-gate
       file: scripts/python/run_gate.py
       description: "门禁编排脚本（全逻辑下沉，AI 仅读结果）"
-      runtimes: [python, bash, powershell]
+      runtimes: [python]
 
   config:
     - name: testing-config.yml
