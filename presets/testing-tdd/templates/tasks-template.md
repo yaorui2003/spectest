@@ -7,7 +7,7 @@ description: "Task list template for feature implementation (testing-tdd preset:
 
 **Input**: Design documents from `/specs/[###-feature-name]/`
 
-**Prerequisites**: plan.md (required), spec.md (required for user stories), test-plan.md (REQUIRED if speckit.testing.plan has been run — CT/UT 用例清单与验收阈值；缺失时测试任务按 contracts/ 与 business_rules 推导，并在 tasks.md 中注明), research.md, data-model.md, contracts/
+**Prerequisites**: plan.md (required), spec.md (required for user stories), test-plan.md (REQUIRED if speckit.testing.plan has been run — CT/UT 用例清单与验收阈值；缺失时测试任务按 contracts/ 与 spec.md FR 段推导，并在 tasks.md 中注明), research.md, data-model.md, contracts/
 
 **Tests**: Tests are **REQUIRED** (NON-NEGOTIABLE). Every functional/implementation task MUST have a corresponding test task generated BEFORE it. Do not skip test generation.
 
@@ -17,7 +17,7 @@ description: "Task list template for feature implementation (testing-tdd preset:
 
 - **[P]**: Can run in parallel (different files, no dependencies)
 - **[Story]**: Which user story this task belongs to (e.g. US1, US2, US3)
-- **[Rule]**: 该任务追溯的规则编号（如 R1），支撑 gate 的 @Spec/@DisplayName 双向对齐
+- **[Rule]**: 该任务追溯的规则编号（如 FR-001），支撑 gate 的 @Spec/@DisplayName 双向对齐
 - Include exact file paths in descriptions
 
 ## Path Conventions
@@ -52,16 +52,16 @@ description: "Task list template for feature implementation (testing-tdd preset:
   双标签说明：每个任务带 [USx] 与 [Rn] 两个标签——
   - [USx] 是 spec-kit 的 user-story 组织索引键（核心 tasks 工作流按 story
     组织任务，去掉会破坏核心工作流）
-  - [Rn] 是 testing 扩展的规则追溯维度，标注该任务实现的 business_rules
-    规则编号（如 R1），支撑 gate 的 @Spec/@DisplayName 双向对齐校验
+  - [Rn] 是 testing 扩展的规则追溯维度，标注该任务实现的 spec.md FR 段
+    规则编号（如 FR-001），支撑 gate 的 @Spec/@DisplayName 双向对齐校验
 
   测试任务 MUST 参考 test-plan.md 用例清单生成（存在时）：
-  - 单测任务引用 UT-xx 编号（如 "per test-plan.md UT-01..UT-03 (R1 正常/
-    异常/边界)"），用例数量与 test-plan.md 对齐（每条 SpecRule 至少 3 条
+  - 单测任务引用 UT-xx 编号（如 "per test-plan.md UT-01..UT-03 (FR-001
+    正常/异常/边界)"），用例数量与 test-plan.md 对齐（每条 SpecRule 至少 3 条
     单测：正常/异常/边界），不得臆造用例数量
   - 契约测试任务引用 CT-xx 编号（每个 Contract 至少 1 正向 + 每错误码 1 反向）
   - test-plan.md 缺失时（未运行 speckit.testing.plan）：按 contracts/（契约
-    测试）与 business_rules（单测）推导测试任务，并在生成的 tasks.md 顶部
+    测试）与 spec.md FR 段（单测）推导测试任务，并在生成的 tasks.md 顶部
     注明"未参考 test-plan.md（未运行 speckit.testing.plan）"
   ============================================================================
   -->
@@ -120,19 +120,23 @@ Examples of foundational tasks (adjust based on your project):
 > **禁止**：用 `mvn compile`（仅 main）或 `mvn test-compile` 通过汇报 Red；
 > 禁止在编译失败时陈述"断言失败"（编译失败时断言未运行）。
 
-- [ ] T015 [P] [US1] [R1] Unit test per test-plan.md UT-xx for [user journey] in src/test/java/{{package}}/unit/[Service]Test.java (JUnit5 + Mockito, @DisplayName("R<n>-<描述>"))
-- [ ] T016 [P] [US1] [R1] Contract test per test-plan.md CT-xx for [endpoint] in src/test/java/{{package}}/contract/[Contract]ContractTest.java (WireMock, @DisplayName("R<n>-<描述>"))
+> **单测质量基线**：单测须**独立**（禁 test 间互相调用、禁共享可变状态/依赖
+> 执行次序）；命名规范（类=被测类+Test、方法=testXxx_状态、包名与被测类
+> 一致）——详见 speckit.testing.plan 3.2 全条目。
+
+- [ ] T015 [P] [US1] [FR-001] Unit test per test-plan.md UT-xx for [user journey] in src/test/java/{{package}}/unit/[Service]Test.java (JUnit5 + Mockito, @DisplayName("FR-xxx-Rm-<描述>"))
+- [ ] T016 [P] [US1] [FR-001] Contract test per test-plan.md CT-xx for [endpoint] in src/test/java/{{package}}/contract/[Contract]ContractTest.java (WireMock, @DisplayName("FR-xxx-Rm-<描述>"))
 
 ### Implementation for User Story 1
 
 > These tasks MUST come AFTER the test tasks above (Red-Green order).
 
-- [ ] T017 [P] [US1] [R1] Create [Entity1] model in src/main/java/{{package}}/model/[Entity1].java
-- [ ] T018 [P] [US1] [R1] Create [Entity2] model in src/main/java/{{package}}/model/[Entity2].java
-- [ ] T019 [US1] [R1] Implement [Service] in src/main/java/{{package}}/service/[Service].java (depends on T017, T018)
-- [ ] T020 [US1] [R1] Implement [endpoint/feature] in src/main/java/{{package}}/[location]/[File].java
-- [ ] T021 [US1] [R1] Add validation and error handling
-- [ ] T022 [US1] [R1] Add logging for user story 1 operations
+- [ ] T017 [P] [US1] [FR-001] Create [Entity1] model in src/main/java/{{package}}/model/[Entity1].java
+- [ ] T018 [P] [US1] [FR-001] Create [Entity2] model in src/main/java/{{package}}/model/[Entity2].java
+- [ ] T019 [US1] [FR-001] Implement [Service] in src/main/java/{{package}}/service/[Service].java (depends on T017, T018)
+- [ ] T020 [US1] [FR-001] Implement [endpoint/feature] in src/main/java/{{package}}/[location]/[File].java
+- [ ] T021 [US1] [FR-001] Add validation and error handling
+- [ ] T022 [US1] [FR-001] Add logging for user story 1 operations
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
 
@@ -158,17 +162,17 @@ Examples of foundational tasks (adjust based on your project):
 > **禁止**：用 `mvn compile`（仅 main）或 `mvn test-compile` 通过汇报 Red；
 > 禁止在编译失败时陈述"断言失败"（编译失败时断言未运行）。
 
-- [ ] T023 [P] [US2] [R2] Unit test per test-plan.md UT-xx for [user journey] in src/test/java/{{package}}/unit/[Service]Test.java (JUnit5 + Mockito, @DisplayName("R<n>-<描述>"))
-- [ ] T024 [P] [US2] [R2] Contract test per test-plan.md CT-xx for [endpoint] in src/test/java/{{package}}/contract/[Contract]ContractTest.java (WireMock, @DisplayName("R<n>-<描述>"))
+- [ ] T023 [P] [US2] [FR-002] Unit test per test-plan.md UT-xx for [user journey] in src/test/java/{{package}}/unit/[Service]Test.java (JUnit5 + Mockito, @DisplayName("FR-xxx-Rm-<描述>"))
+- [ ] T024 [P] [US2] [FR-002] Contract test per test-plan.md CT-xx for [endpoint] in src/test/java/{{package}}/contract/[Contract]ContractTest.java (WireMock, @DisplayName("FR-xxx-Rm-<描述>"))
 
 ### Implementation for User Story 2
 
 > These tasks MUST come AFTER the test tasks above (Red-Green order).
 
-- [ ] T025 [P] [US2] [R2] Create [Entity] model in src/main/java/{{package}}/model/[Entity].java
-- [ ] T026 [US2] [R2] Implement [Service] in src/main/java/{{package}}/service/[Service].java
-- [ ] T027 [US2] [R2] Implement [endpoint/feature] in src/main/java/{{package}}/[location]/[File].java
-- [ ] T028 [US2] [R2] Integrate with User Story 1 components (if needed)
+- [ ] T025 [P] [US2] [FR-002] Create [Entity] model in src/main/java/{{package}}/model/[Entity].java
+- [ ] T026 [US2] [FR-002] Implement [Service] in src/main/java/{{package}}/service/[Service].java
+- [ ] T027 [US2] [FR-002] Implement [endpoint/feature] in src/main/java/{{package}}/[location]/[File].java
+- [ ] T028 [US2] [FR-002] Integrate with User Story 1 components (if needed)
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently
 
@@ -194,16 +198,16 @@ Examples of foundational tasks (adjust based on your project):
 > **禁止**：用 `mvn compile`（仅 main）或 `mvn test-compile` 通过汇报 Red；
 > 禁止在编译失败时陈述"断言失败"（编译失败时断言未运行）。
 
-- [ ] T029 [P] [US3] [R3] Unit test per test-plan.md UT-xx for [user journey] in src/test/java/{{package}}/unit/[Service]Test.java (JUnit5 + Mockito, @DisplayName("R<n>-<描述>"))
-- [ ] T030 [P] [US3] [R3] Contract test per test-plan.md CT-xx for [endpoint] in src/test/java/{{package}}/contract/[Contract]ContractTest.java (WireMock, @DisplayName("R<n>-<描述>"))
+- [ ] T029 [P] [US3] [FR-003] Unit test per test-plan.md UT-xx for [user journey] in src/test/java/{{package}}/unit/[Service]Test.java (JUnit5 + Mockito, @DisplayName("FR-xxx-Rm-<描述>"))
+- [ ] T030 [P] [US3] [FR-003] Contract test per test-plan.md CT-xx for [endpoint] in src/test/java/{{package}}/contract/[Contract]ContractTest.java (WireMock, @DisplayName("FR-xxx-Rm-<描述>"))
 
 ### Implementation for User Story 3
 
 > These tasks MUST come AFTER the test tasks above (Red-Green order).
 
-- [ ] T031 [P] [US3] [R3] Create [Entity] model in src/main/java/{{package}}/model/[Entity].java
-- [ ] T032 [US3] [R3] Implement [Service] in src/main/java/{{package}}/service/[Service].java
-- [ ] T033 [US3] [R3] Implement [endpoint/feature] in src/main/java/{{package}}/[location]/[File].java
+- [ ] T031 [P] [US3] [FR-003] Create [Entity] model in src/main/java/{{package}}/model/[Entity].java
+- [ ] T032 [US3] [FR-003] Implement [Service] in src/main/java/{{package}}/service/[Service].java
+- [ ] T033 [US3] [FR-003] Implement [endpoint/feature] in src/main/java/{{package}}/[location]/[File].java
 
 **Checkpoint**: All user stories should now be independently functional
 
@@ -213,20 +217,23 @@ Examples of foundational tasks (adjust based on your project):
 
 ---
 
-## Phase N: Frontend Tasks（前端任务区 -- 本 feature 涉及前端 .vue/.js/.ts 时 MUST）
+## Phase N: Frontend Tasks（前端任务区 -- 可选，仅当涉及前端 .vue/.js/.ts 且团队决定实施前端测试时）
 
-**Purpose**: Frontend changes MUST ship with tests too（前端改动时测试任务 REQUIRED，双标签 [USx] [Rn] 保留）
+**Purpose**: 前端测试为**可选**（OPTIONAL，默认不生成，不做不 FAIL——gate 只
+校验后端单测/契约测试）。如选择实施，测试任务与实现任务同区保留，双标签
+[USx] [Rn] 保留
 
-### Tests for Frontend (REQUIRED - TDD) ⚠️
+### Tests for Frontend (OPTIONAL - 如选择实施) ⚠️
 
-> 组件测试用 **vitest**（+ @vue/test-utils + happy-dom，`describe("R<n>-<描述>")`
-> 对齐 spec.md 规则编号——@Spec 仅限 Java，前端用命名规范对齐）。
-> e2e MUST **确定性**（stub LLM / WS 固定事件序列，禁真实 LLM）；真实链路
-> e2e 仅手工/定时慢跑，**不进门禁**。
+> 组件测试用 **vitest**（+ @vue/test-utils + happy-dom，`describe("FR-xxx-Rm-<描述>")`
+> 对齐 spec.md FR 段规则编号——@Spec 仅限 Java，前端用命名规范对齐）。
+> e2e MUST **确定性**（stub 外部不确定依赖——HTTP API / WS 推送 / 第三方
+> 接口按项目实际拦截注入固定数据，禁真实调用）；真实链路 e2e 仅手工/定时
+> 慢跑，**不进门禁**。
 
-- [ ] TXXX [P] [USx] [Rn] Component test for [Component].vue in frontend/src/.../__tests__/[Component].spec.js (vitest, describe("R<n>-<描述>"))
-- [ ] TXXX [P] [USx] [Rn] Unit test for [api].js (WS 连接/断连/降级) in frontend/src/.../__tests__/[api].spec.js (vitest)
-- [ ] TXXX [USx] [Rn] Deterministic e2e for [e2e case id] in frontend/e2e/[Name].spec.js (stub LLM + fixed WS events, covered_rules: R<n>)
+- [ ] TXXX [P] [USx] [Rn] Component test for [Component].vue in frontend/src/.../__tests__/[Component].spec.js (vitest, describe("FR-xxx-Rm-<描述>"))
+- [ ] TXXX [P] [USx] [Rn] Unit test for [api].js (HTTP/WS 请求与错误处理) in frontend/src/.../__tests__/[api].spec.js (vitest)
+- [ ] TXXX [USx] [Rn] Deterministic e2e for [e2e case id] in frontend/e2e/[Name].spec.js (stub HTTP API 固定 JSON；有 WS/第三方再扩展注入, covered_rules: FR-xxx)
 
 ### Implementation for Frontend
 

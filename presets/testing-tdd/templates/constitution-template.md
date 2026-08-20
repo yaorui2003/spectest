@@ -11,15 +11,16 @@
 
 规则：
 
-- 每条 spec.md 中 business_rules 的规则 MUST 至少有一个 @Spec 注解对应
+- 每条 spec.md `### Functional Requirements` 段的规则（FR-001）MUST 至少有一个 @Spec 注解对应
 - 实现该规则的每个 public 方法 MUST 携带至少一个 @Spec 注解
-- @Spec 的 rule 编号 MUST 严格匹配 spec.md 中的规则编号（如 R1、R2）
-- 单测 MUST 在 @DisplayName 中标注对应规则编号（如 @DisplayName("R1-转账金额为0应拒绝")）
+- @Spec 的 rule 编号 MUST 严格匹配 spec.md 原生 FR 段顶层锚（如 FR-001、FR-002），永不携带 -R 子编号
+- 单测 MUST 在 @DisplayName 中标注子场景编号（如 @DisplayName("FR-001-R1-转账金额为0应拒绝")），与 @Spec 顶层锚按 FR 前缀双向对齐；test-plan.md 业务规则细分段为可选参考层（plan 可不跑，无则测试作者按 FR 自编号）
 - contracts/ 中的接口契约 MUST 列出该接口实现的规则编号清单
 
 rationale: 门禁通过扫描 @Spec 注解自动校验"Spec 能力点 -> 代码实现"覆盖完整性，
-防止规则遗漏实现；单测侧通过 @DisplayName 标注实现双向对齐，支撑 Spec-Code-Test
-三角一致性校验。本原则是 testing 扩展门禁逻辑的运行时依据。
+防止规则遗漏实现；单测侧通过 @DisplayName 标注实现双向对齐（顶层锚 FR-xxx +
+子编号 FR-xxx-Rm 双级），支撑 Spec-Code-Test 三角一致性校验。本原则是 testing
+扩展门禁逻辑的运行时依据。
 
 ### II. 中文文档与代码注释 (NON-NEGOTIABLE)
 <!-- PRE-SEEDED BY testing-tdd PRESET - DO NOT REMOVE. -->
@@ -48,12 +49,16 @@ Java 项目的测试技术栈 MUST 遵守以下约定（testing 扩展门禁 run
 
 - **必需**：JUnit 4/5（`org.junit.jupiter`）+ Mockito（`@Mock`/`@InjectMocks`/
   `MockitoExtension`）+ Surefire（`mvn test` 生成 surefire-reports）+ JaCoCo
-  （line/branch/method/instruction/complexity 覆盖率，`target/site/jacoco/jacoco.xml`）
+  （line/branch/method/instruction/complexity 覆盖率，`target/site/jacoco/jacoco.xml`）；
+  单测 MUST 位于 `src/test/java`；构建配置禁止单测打包进生产产物（版本构建
+  禁单测进生产包）
 - **禁用**：PowerMock（覆盖率失真，检出即 FAIL）；`@SpringBootTest` 起容器
   （单测用 Mockito、契约测试用 WireMock，均不起容器；并发/集成类测试也用纯
   JUnit + Mockito + Thread/ExecutorService，不起容器）
-- **前端（涉及 .vue/.js/.ts 时）**：组件测试（vitest）REQUIRED；e2e 必须
-  确定性（stub LLM/WS），真实链路 e2e 不进门禁
+- **前端（涉及 .vue/.js/.ts 时）**：组件测试（vitest）与 e2e 为**可选**
+  （OPTIONAL，默认不做，不做不 FAIL）；如选择实施，组件测试用 vitest，e2e
+  必须**确定性**（stub 外部不确定依赖——HTTP API / WebSocket 推送 / 第三方
+  接口等按项目实际拦截，禁真实调用），真实链路 e2e 不进门禁
 
 rationale: 技术栈是门禁覆盖率/通过率指标真实性的前提，禁用项会造成覆盖率失真
 或拖慢执行。本原则是公司测试规范，由 testing 扩展门禁强制（scan_test_stack 检出

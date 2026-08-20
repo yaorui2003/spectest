@@ -6,7 +6,8 @@
  * - 安装：npm i -D vitest @vue/test-utils happy-dom；package.json 加 "test": "vitest run"
  * - 组件引用 .vue 需 vitest/vite 插件解析（@vitejs/plugin-vue），Vite 项目开箱可用
  *
- * 追溯规范（MUST）：describe("R<n>-<规则描述>", ...) 对齐 spec.md Business Rules 编号。
+ * 追溯规范（MUST）：describe("FR-xxx-Rm-<规则描述>", ...) 对齐 spec.md ### Functional Requirements
+ * 段编号（FR 顶层锚 + R 子编号）。
  * @Spec 注解仅限 Java 业务代码；前端不注解，用 describe 命名规范对齐（设计定案）。
  *
  * 弱断言禁令（MUST）：每条用例必须有具体业务语义断言
@@ -37,7 +38,7 @@ vi.mock('@stomp/stompjs', () => ({
 }));
 
 // ===== a) api 层：pipelineWs 连接 / 断连 / 降级轮询 =====
-describe('R{{n}}-{{规则描述}}：pipelineWs 连接 / 断连 / 降级轮询', () => {
+describe('FR-001-R{{n}}-{{规则描述}}：pipelineWs 连接 / 断连 / 降级轮询', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     // TODO: 替换为实际初始化（新建 Client 实例并连接）
@@ -85,7 +86,7 @@ describe('R{{n}}-{{规则描述}}：pipelineWs 连接 / 断连 / 降级轮询', 
 import AgentScopeWorkbench from '{{component_path}}';
 import PipelineReport from '{{pipeline_report_path}}';
 
-describe('R{{n}}-{{规则描述}}：AgentScopeWorkbench 状态聚合', () => {
+describe('FR-001-R{{n}}-{{规则描述}}：AgentScopeWorkbench 状态聚合', () => {
   it('挂载 -> 推送 WS 事件 -> 断言状态渲染', async () => {
     // given -- 挂载组件，stub 子组件隔离依赖
     const wrapper = mount(AgentScopeWorkbench, {
@@ -115,7 +116,7 @@ describe('R{{n}}-{{规则描述}}：AgentScopeWorkbench 状态聚合', () => {
   });
 });
 
-describe('R{{n}}-{{规则描述}}：PipelineReport 渲染', () => {
+describe('FR-001-R{{n}}-{{规则描述}}：PipelineReport 渲染', () => {
   it('传入报告数据 -> 渲染关键指标文案', () => {
     // given -- 报告数据与后端返回结构一致
     const wrapper = mount(PipelineReport, {
@@ -134,7 +135,7 @@ describe('R{{n}}-{{规则描述}}：PipelineReport 渲染', () => {
 // TODO: 替换为实际工具模块路径（如 '@/utils/format'）
 import { {{util_fn}} } from '{{utils_module_path}}';
 
-describe('R{{n}}-{{规则描述}}：{{util_fn}} 纯函数', () => {
+describe('FR-001-R{{n}}-{{规则描述}}：{{util_fn}} 纯函数', () => {
   it('正常输入 -> 期望输出', () => {
     expect({{util_fn}}({{input_fixture}})).toEqual({{expected_output}});
   });
@@ -146,7 +147,7 @@ describe('R{{n}}-{{规则描述}}：{{util_fn}} 纯函数', () => {
 
 /**
  * 自检清单：
- * - [ ] 每条 describe 命名 R<n>-<规则描述> 对齐 spec.md Business Rules 编号
+ * - [ ] 每条 describe 命名 FR-xxx-Rm-<规则描述> 对齐 spec.md FR 段编号
  * - [ ] api / 组件 / 工具三层各自至少 1 条用例（仅涉及单层时可裁剪并说明）
  * - [ ] 无弱断言：每条 it 至少一个 toContain / toBe / toHaveBeenCalledWith 等具体断言
  * - [ ] 外部依赖（WS / HTTP / 定时器）全部 mock，禁真实网络

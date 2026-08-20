@@ -1,566 +1,408 @@
 # Speckit Testing 扩展
 
-> Spec 驱动测试先行验证，含 `@Spec` 注解追溯、自动门禁（脚本化）、对抗测试
-> 与**前端 e2e 测试规划**（TC 用例 + 功能测试案例集，不进门禁、不脚本化）。
-> 版本 1.3.0（v0.6：框架泛化——在后端 TDD 基础上加入前端 e2e 测试规划：
-> plan 生成前端测试项简版清单，impact 生成功能测试案例集供 e2e 测试 AI 使用）。
+> Spec 驱动测试先行验证：`@Spec` 注解追溯 + 脚本化门禁（全逻辑下沉、AI 不改判）
+> + 对抗测试 + 风险分级 + JaCoCo diff coverage + 前端测试支持（vitest 单测骨架
+> + 确定性 e2e + 用例选择执行）。版本 1.4.0（v0.6 文档版 + v0.6.1 beta 简化）。
+>
+> beta 阶段说明：门禁脚本 **python-only**（`scripts/python/` 唯一实现，
+> sh/ps 已弃用留档）；模块定位由 AI 辅助（`find pom.xml` 提示词），覆盖率
+> 采用 diff coverage（只看 MR 变更行）。
 
-## 概述
+## 目录
 
-本扩展为 spec-kit 增加"Spec 驱动测试先行"能力，通过 4 个命令 + 2 个强制钩子
-+ 6 个代码/文档模板 + 5 组三语言脚本（含 `run_gate` 门禁编排）+ `@Spec` 注解，
-实现 **Spec-Code-Test 三角一致性**自动校验，并在此基础上提供**前端 e2e 测试
-规划**（e2e 不做 TDD、不进门禁，仅生成规划产物供 e2e 测试 AI 消费）。
-
-核心改造（v0.4）：**门禁全脚本化**——`run_gate` 把 gate 的全部确定性逻辑
-（mvn clean test + 4 步校验 + 阈值比对 + PASS/FAIL 判定 + 写 gate-result.md）
-下沉到脚本，AI 仅读 stdout 判定 JSON 不能改判，直击试点 P0「Agent 伪造覆盖率」。
-
-核心理验：**Spec 是唯一事实来源，contracts 是测试与代码的共同输入，
-测试先行，`@Spec` 注解打通追溯链路，门禁由脚本判定不由 AI 自报。**
+1. [工作原理：它是什么、为什么这样设计](#一工作原理)
+2. [组成：扩展如何拼装](#二组成扩展如何拼装)
+3. [全流程：端到端怎么跑](#三全流程端到端怎么跑)
+4. [追溯机制：Spec ↔ 代码 ↔ 测试](#四追溯机制spec--代码--测试)
+5. [门禁原理：run_gate 如何裁决](#五门禁原理run_gate-如何裁决)
+6. [风险分级与前端测试](#六风险分级与前端测试)
+7. [测试技术栈（必需前置）](#七测试技术栈必需前置)
+8. [安装](#八安装)
+9. [配置](#九配置)
+10. [卸载 / 切回普通 spec-kit](#十卸载--切回普通-spec-kit)
 
 ---
 
-## 一、与原 spec-kit 相比增加了什么
+## 一、工作原理
 
-spec-kit 核心（`/speckit.*` 原生命令）只提供「需求 -> 方案 -> 任务 -> 实现」
-的 Spec-Driven 主链路，**不含任何测试治理、追溯校验、自动门禁能力**。本项目以
-**三层交付**在其上叠加闭环：
+### 1.1 要解决的问题
+
+spec-kit 核心只提供「需求 -> 方案 -> 任务 -> 实现」主链路，**不含测试治理**：
+不强制写测试、无法证明"代码按 Spec 实现"、门禁靠 AI 自报（8/18 试点中 AI
+声称 96% 覆盖率实际 62.9%）。
+
+本扩展的目标是做到 **Spec 规则 ↔ 业务代码 ↔ 测试代码 一一对应**，且
+"是否达标"由**确定性脚本裁决，不由 AI 自述**。
+
+### 1.2 核心不变量（设计原则）
+
+| 不变量 | 含义 | 落地 |
+|---|---|---|
+| **Spec 是唯一事实来源** | spec.md 的 `### Functional Requirements` 段 FR-001..FR-xxx 贯穿全链路 | impact（分级）/ plan（用例）/ gate（对齐）/ report（矩阵）都从 FR-001..FR-xxx 出发 |
+| **测试先行** | 骨架 -> 单测（先 Red）-> 契约测试 -> 业务代码（Green） | tasks/implement 模板强制 |
+| **@Spec 打通追溯链** | 业务代码标 `@Spec(rule="FR-001")`，测试标 `@DisplayName("FR-001-R1-...")`，契约测试标 CT-xx | 注解 + 命名规范 |
+| **门禁脚本判定，AI 不改判** | run_gate 全逻辑下沉，AI 仅读 stdout JSON | 直击 P0「AI 伪造覆盖率」 |
+| **脚本采集事实，AI 补语义** | 结构性检查（编译/覆盖/对齐）脚本 HARD 判定；语义检查（测试是否测对了业务）AI SOFT 验证 | T1/T2 双门禁（见 5.5） |
+| **T2 达标 ≠ T1 达标** | 全绿 + 覆盖率达标只证明"能运行"，不证明"按业务实现" | AI 交叉验证第 5 维：每条规则至少 1 个直接单测 |
+
+### 1.3 四层机制如何达成"一一对应"
+
+```
+注解打通链路 → 脚本采集事实 → 门禁硬校验 → 矩阵可视化
+   @Spec         JSON 输出        PASS/FAIL 阻断     test-report.md
+   @DisplayName  不依赖 AI 自报   任一方向断裂即 FAIL  缺口一目了然
+```
+
+---
+
+## 二、组成：扩展如何拼装
+
+spec-kit 的扩展机制分三层，本能力以**三层交付**叠加：
 
 | 层 | 载体 | 职责 | 是否改核心行为 |
 |---|---|---|---|
-| **扩展 testing** | `extensions/testing/extension.yml` | 新增能力（命令/钩子/脚本/模板/注解/配置） | 否，只加新东西 |
-| **预设 testing-tdd** | `presets/testing-tdd/preset.yml` | 改写核心模板与 implement 命令 | 是（replace/append 核心模板） |
-| **bundle speckit-testing** | `examples/bundles/speckit-testing/bundle.yml` | 一键装扩展+预设 | — |
+| **扩展 testing** | `extensions/testing/extension.yml` | 新增能力：4 命令 + 1 钩子 + 8 模板 + 5 脚本 + @Spec + 配置 | 否（只加新东西） |
+| **预设 testing-tdd** | `presets/testing-tdd/preset.yml` | replace 宪法/spec/tasks 模板 + append implement 命令，强制 TDD 行为 | 是（必须配套装） |
+| **bundle speckit-testing** | `examples/bundles/speckit-testing/bundle.yml` | 一键装扩展 + 预设 | — |
 
-### 1.1 原 spec-kit 核心基线（对比基准）
+### 2.1 4 个命令（provides.commands）
 
-| 核心命令 | 产物 | 说明 |
-|---|---|---|
-| `/speckit.constitution` | `constitution.md` | 治理准则（默认若干 Principle，Spec Traceability 原排在 Principle VI） |
-| `/speckit.specify` | `spec.md` | 需求规格（User Stories + Requirements + API） |
-| `/speckit.clarify` | — | 澄清不充分描述（specify 后、plan 前） |
-| `/speckit.plan` | `plan.md` + `contracts/` + `data-model.md` + `research.md` | 技术方案 + 接口契约 + 数据模型 + 调研 |
-| `/speckit.analyze` | — | 跨制品一致性与覆盖度分析（tasks 后、implement 前） |
-| `/speckit.tasks` | `tasks.md` | 任务清单（核心模板中 **Tests 标 OPTIONAL**，存在矛盾） |
-| `/speckit.implement` | 业务代码 | 执行任务构建功能（核心**不强制** @Spec、不强制测试先行） |
+命令是带 frontmatter 的 `.md` 指令文件，声明输入/处理逻辑/输出契约，由 AI 执行：
 
-核心**没有**：测试命令、`after_implement` 钩子、`@Spec` 注解、测试模板、扫描脚本、
-门禁、风险分级、覆盖率阈值、追溯矩阵、Business Rules 段、对抗测试。
-
-### 1.2 testing 扩展（加新能力，不改核心）
-
-扩展通过 `extension.yml` manifest 声明 `provides`，由 `specify extension add` 安装到
-项目的 agent 命令目录。**核心 spec-kit 行为不变，只增量叠加**。
-
-#### 1.2.1 4 个命令（provides.commands）
-
-每个命令是一个带 frontmatter 的 `.md` 指令文件，声明触发方式、输入、处理逻辑、输出契约。
-
-| 命令 | 作用 | 实现方式 |
-|---|---|---|
-| `/speckit.testing.impact` | 变更影响分析：解析 git diff 中 spec.md 变更 + 扫描代码依赖 + 按规则语义风险分级（high/medium/low）+ 产出受影响规则清单与测试策略 + **功能测试案例集**（TC-xx，Given-When-Then，供前端 e2e 测试 AI 使用） | 命令 `.md` 描述 AI 执行步骤（解析 diff / 扫描结构 / 语义分级 / 产出 ImpactReport / 生成 TC 案例集）；`after_implement` 钩子 `optional:false` 强制自动 |
-| `/speckit.testing.plan` | 测试计划：遍历 contracts/ + business_rules 生成 CT/UT 用例清单 + **前端测试项（TC，e2e 规划简版）** + 单测质量要求 + 按风险套阈值 + 单测先行排期 | 命令 `.md` 描述生成逻辑，引用 `test-plan-template` 组织文档结构 |
-| `/speckit.testing.gate` | 门禁：AI 调 `run_gate` 脚本执行全量校验，仅读 stdout 判定 JSON 输出阻断/通过指令 | frontmatter `scripts:` 段声明 run_gate 三语言入口；AI 不执行 mvn、不改判、不补写 |
-| `/speckit.testing.report` | 测试报告：校验门禁已 PASS + 汇总结果 + 生成 Spec 追溯矩阵 + 引用（不重生成）ImpactReport | 命令 `.md` 描述汇总与矩阵生成，引用 `spec-trace-matrix` 模板 |
-
-#### 1.2.2 2 个强制钩子（hooks.after_implement）
-
-| 钩子 | 时机 | 绑定命令 | optional |
+| 命令 | 触发 | 作用 | 产物 |
 |---|---|---|---|
-| `after_implement` | `speckit.implement` 执行后 | `impact` -> `gate`（列表形式，按序） | false（自动） |
+| `/speckit.testing.impact` | 手动 / **钩子自动**（在前） | 变更影响分析：git diff + 源码 @Spec 分布 -> 受影响规则清单 + **风险分级（规则化评分）** + 功能测试案例集（GWT） | `docs/impact-report.md` |
+| `/speckit.testing.plan` | 手动（plan 后） | 测试计划：CT/UT 用例 + 验收阈值 + 前端测试项 TC + 单测先行排期 | `docs/test-plan.md` |
+| `/speckit.testing.gate` | 手动 / **钩子自动**（在后） | 门禁：AI 调 `run_gate` 脚本，仅读 stdout JSON，不能改判 | `docs/gate-result.md`（脚本写） |
+| `/speckit.testing.report` | 手动（gate PASS 后） | 汇总结果 + Spec 追溯矩阵；引用（不重生成）impact-report | `docs/test-report.md` |
 
-实现方式：`extension.yml` 顶层 `hooks.after_implement` 为列表，AI Agent 读取
-`.specify/extensions.yml` 的钩子段，在 implement 完成后按序执行
-`impact`（先产出风险）-> `gate`（后消费风险套阈值）。**impact 在前、gate 在后**
-的顺序是钩子链不断裂的关键——gate 前置检查 impact-report.md 存在，缺失即 FAIL。
+### 2.2 强制钩子（hooks.after_implement）
 
-#### 1.2.3 6 个模板（provides.templates）
-
-| 模板 | 作用 | 实现方式 |
-|---|---|---|
-| `java-service-template` | Java Service 业务代码骨架，带 `@Spec` 注解占位符 | `.template.java` 文件，implement 时按约定参考（非机械复制） |
-| `java-unit-test-template` | JUnit5 单测骨架，`@DisplayName("R<n>-...")` 规则标注 + given/when/then 三段式 | 同上 |
-| `contract-test-template` | 契约测试骨架：WireMock stub + HTTP 客户端调用 + 断言响应码/体，每接口 1 正向 + 每错误码 1 反向，禁 `assertTrue(true)` | 同上 |
-| `test-plan-template` | 测试计划文档结构（验收阈值 + CT/UT 用例表 + **前端测试项 TC 表** + 排期表） | `.md` 文件，testing.plan 命令引用组织产物 |
-| `e2e-case-template` | **功能测试案例集模板**（Given-When-Then 结构化块：类型/关联规则 + Given/When/Then 三段，供前端 e2e 测试 AI 使用） | `.md` 文件，testing.impact 命令引用组织产物 |
-| `spec-trace-matrix` | Spec 追溯矩阵结构（门禁状态 + 结果摘要 + R->@Spec->单测->CT 矩阵 + 影响引用） | `.md` 文件，testing.report 命令引用组织产物 |
-
-#### 1.2.4 5 组三语言脚本（provides.scripts，sh/ps/py 字节级等价）
-
-每个脚本组三套实现（`scripts/{bash,powershell,python}/`），由 `test_scan_script_parity.py`
-强制 JSON 输出字节级一致。bash/ps 版用 `import run_gate` 复用 Python 核心保证等价。
-
-| 脚本 | 作用 | 实现方式 |
-|---|---|---|
-| `scan-spec-annotations` | 解析 `.java` 提取 `@Spec` 注解 + 解析 spec.md business_rules，输出 JSON（spec_rules / annotated_rules / unimplemented_rules / orphan_annotations / coverage_percent） | 正则扫描源码 + 规则编号比对 |
-| `validate-spec-format` | 校验 spec.md 格式：Business Rules 段存在 + R 编号连续 + Error Code Definitions 可选段 | 段落解析 + 编号连续性校验 |
-| `parse-test-results` | 解析 surefire XML + JaCoCo XML，输出 unit_tests / contract_tests / coverage JSON | XML 解析聚合 |
-| `scan-test-stack` | 技术栈硬校验：扫描 `src/test/` 检出 PowerMock / `@SpringBootTest` 禁用项 | 正则匹配禁用导入/注解 |
-| `run-gate`（v0.4 核心） | 门禁编排：全逻辑下沉（mvn clean test + 4 步校验 + 阈值比对 + 写 gate-result.md），AI 仅读结果 | 9 步串行编排脚本；含 `--check-only` 子模式供对抗测试自检 |
-
-脚本由命令 frontmatter `scripts:` 段声明，按项目 `--script sh|ps|py` 选择其一执行。
-
-#### 1.2.5 @Spec 注解（annotations/）
-
-| 文件 | 作用 | 实现方式 |
-|---|---|---|
-| `Spec.java` | `@Spec(capability, rule, description)` 注解定义 | `@Repeatable` + `@Retention(RUNTIME)`，运行时可反射读取 |
-| `Specs.java` | `@Spec` 容器注解 | 支持 `@Repeatable` 多规则标注 |
-
-> `@Spec` 仅限 Java 业务代码，扩展自身的 Python/Bash 代码不携带（扩展是提供方，非被扫描对象）。
-
-#### 1.2.6 配置（provides.config）
-
-`testing-config.template.yml`：门禁阈值（line/branch/method/instruction/complexity 覆盖率 + 通过率）
-+ 风险分级覆盖（high/medium/low 三档单调递减）+ 技术栈禁用项 + v0.4 对抗测试段。
-首次安装从模板复制到 `.specify/extensions/testing/testing-config.yml`，项目可覆盖。
-
-#### 1.2.7 前端 e2e 测试规划（v0.6，规划不执行）
-
-框架已从纯后端 TDD 泛化为**后端 TDD + 前端 e2e 规划**：
-
-| 维度 | 后端（CT/UT） | 前端 e2e（TC） |
-|---|---|---|
-| 生成时机 | `testing.plan` 生成用例清单 | plan 生成**简版**清单（编号+场景+类型+覆盖规则）；实现后 `testing.impact` 生成**详细版**功能测试案例集（Given-When-Then） |
-| 载体 | test-plan.md（用例清单） | 简版在 test-plan.md；详细版在 impact-report.md「功能测试案例集（e2e 规划）」段，按 `e2e-case-template` 模板组织 |
-| 门禁 | gate 硬校验（run_gate 脚本） | **不进门槛**，不脚本化，不要求写 e2e 代码 |
-| 消费方 | 开发者 + AI（implement/gate） | **前端 e2e 测试 AI**（如 Playwright）——案例集被独立转发，每条用例按 **Given-When-Then** 编写（Given=前置+测试数据 / When=操作步骤 / Then=精确预期文案），自包含可执行 |
-| 追溯 | @Spec ↔ @DisplayName ↔ CT | TC 标注关联 business_rules 编号（可追溯，但不参与 gate 双向对齐） |
-
-> 设计取舍：e2e 做 TDD 成本过高（浏览器环境、稳定性、慢），本框架只做**提前
-> 规划**——在后端实现完成后由 impact 依据实际校验逻辑/契约错误码产出可执行级
-> 案例集，交给 e2e 测试 AI 落地脚本，避免"规划与实现脱节"。
-
-### 1.3 testing-tdd 预设（replace/append 核心行为）
-
-扩展只加新能力，**不改核心模板**。要让 constitution 预置追溯原则、spec 模板加规则段、
-tasks 强制 TDD、implement 强制 @Spec，需配套安装 `testing-tdd` 预设。预设通过
-`preset.yml` 的 `provides.templates` 声明 `strategy: replace|append` + `replaces` 字段，
-由 `specify preset add` 安装时覆盖/追加核心模板。
-
-| 覆盖目标 | 策略 | 原核心 | 改后 | 实现方式 |
-|---|---|---|---|---|
-| `constitution-template` | replace | Spec Traceability 在 Principle VI | **Principle I 置首**（Spec Traceability，NON-NEGOTIABLE）+ Principle II 中文文档与代码注释 + Principle III 测试技术栈 | replace 整个模板文件 |
-| `spec-template` | replace | 无 Business Rules 段 | 加 `## Business Rules`（REQUIRED，R 编号连续）+ `### Error Code Definitions`（可选段） | replace 整个模板文件 |
-| `tasks-template` | replace | **Tests OPTIONAL**（矛盾） | 测试 **REQUIRED** + 骨架先行（Phase 2 T010-T014 编译检查点）+ 单测先行 + 双标签 `[USx] [Rn]` | replace 整个模板文件 |
-| `speckit.implement` 命令 | append | 不强制 @Spec | 追加：@Spec 强制 + 模板约定参考 + 技术栈 + 单测先行产出顺序 + 第 4.5 阶段对抗测试（`run_gate --check-only` 自检 + 关键路径必测 + 渐进式轮次） | append 到核心命令尾部 |
-
-**双标签设计**：tasks-template 每个任务带 `[USx]`（spec-kit user-story 组织索引键，去掉破坏核心工作流）
-+ `[Rn]`（testing 扩展规则追溯维度）。`[USx]` 服务核心任务编排，`[Rn]` 服务 gate 的
-@Spec/@DisplayName 双向对齐——两标签各司其职，缺一不可。
-
-### 1.4 speckit-testing bundle（一键装）
-
-`bundle.yml` 声明 `provides.extensions`（testing）+ `provides.presets`（testing-tdd，priority 10），
-`specify bundle install speckit-testing` 一键装齐扩展 + 预设，避免漏装预设导致核心行为未改。
-
----
-
-## 二、Spec - 业务代码 - 测试代码一一对应（核心追溯机制）
-
-本项目的最终目的是达到 **spec 规则 ↔ 业务代码 ↔ 测试代码** 的一一对应。
-这不是靠人工保证，而是靠**注解打通链路 + 脚本采集事实 + 门禁硬校验 + 矩阵可视化**
-四层机制实现。
-
-### 2.1 追溯链全景
+`speckit.implement` 执行完**自动**触发，`impact` 在前、`gate` 在后（顺序是钩子链
+不断裂的关键——gate 前置检查 impact-report.md 存在，缺失即 FAIL）：
 
 ```
-        spec.md  (Business Rules R1..Rn)  ← 唯一事实来源
-           │
-     ┌─────┴─────┐
-     ▼           ▼
-  业务代码     测试代码
-  @Spec        @DisplayName
-  rule=Rn      "Rn-描述"
-     │           │
-     └─────┬─────┘
-           ▼
-      scan + 双向对齐校验 (run_gate 步骤 4-5)
-           │
-           ▼
-      追溯矩阵 (test-report.md)
-      R1 -> @Spec 代码位置 -> 单测 -> 契约测试 CT
+implement ──► impact（先产出风险分级）──► gate（后消费风险套阈值）
 ```
 
-### 2.2 三条打通路径
+### 2.3 8 个模板（provides.templates）
 
-#### 路径 A：spec 规则 ↔ 业务代码（@Spec 注解）
+| 模板 | 用途 |
+|---|---|
+| `java-service` | 业务代码骨架，`@Spec` 注解占位 |
+| `java-unit-test` | JUnit5 单测：`@DisplayName("FR-xxx-Rm-...")` + given/when/then |
+| `contract-test` | 契约测试：WireMock stub + HTTP 客户端调用 + 断言响应码/体（每接口 1 正向 + 每错误码 1 反向） |
+| `frontend-unit-test` | 前端单测（vitest + @vue/test-utils + happy-dom），describe 对齐规则编号（**可选实施**） |
+| `frontend-e2e` | 确定性 e2e（Playwright，**可选实施**）：stub 外部不确定依赖（HTTP API 主路径，WS/第三方按项目实际扩展）+ 显式超时 + `covered_rules` 元数据注释 |
+| `e2e-case-template` | 功能测试案例集（Given-When-Then + 关联规则），impact 生成、e2e 选择执行消费（**可选生成**） |
+| `test-plan-template` | 测试计划文档结构（阈值 + 用例表 + 排期） |
+| `spec-trace-matrix` | 追溯矩阵结构（FR-xxx -> @Spec -> 单测 -> CT） |
 
-- **机制**：业务代码每个实现 Spec 规则的 public 方法 MUST 标注
-  `@Spec(capability="<cap>", rule="Rn", description="<说明>")`，同一方法实现多规则用
-  多条 `@Spec`（`@Repeatable`）。
-- **为什么 SOURCE**：门禁靠脚本静态正则扫描 `.java` 源码文本，retention 对扫描结果无影响；SOURCE 使注解仅存源码、编译时丢弃，不污染 class 文件，明确表达源码级标记意图（无运行时反射消费方）。
-- **采集**：`scan_spec_annotations` 脚本正则解析全部 `.java` 提取 `@Spec` 的 rule 字段，
-  同时解析 spec.md 的 business_rules 规则编号，输出三类比对结果：
-  - `annotated_rules`：代码中 `@Spec` 标注的规则 -> 代码位置映射
-  - `unimplemented_rules`：spec.md 有但代码无 `@Spec` 的规则（漏实现）
-  - `orphan_annotations`：代码有 `@Spec` 但 spec.md 无对应规则（编号写错或 spec 已删）
+### 2.4 5 个脚本（provides.scripts，**python-only**）
 
-#### 路径 B：spec 规则 ↔ 测试代码（@DisplayName 约定）
+beta 阶段只维护 `scripts/python/` 唯一实现（sh/ps 已标注 DEPRECATED 留档）。
+脚本输出 JSON，AI 只读不改——这是「不依赖 AI 自报」的物理保证：
 
-- **机制**：单测 MUST 在 `@DisplayName("R<n>-<具体场景描述>")` 中标注验证的规则编号，
-  描述须含期望结果（如 `R1-转账金额为0应抛出INVALID_AMOUNT`，非泛泛"测试金额校验"）。
-- **采集**：`run_gate` 步骤 5 内联解析单测源码的 `@DisplayName`，提取规则编号 `Rn`。
-- **对齐对象**：与代码侧 `@Spec(rule="Rn")` 双向对齐（见 2.4）。
+| 脚本 | 作用（输出 JSON） |
+|---|---|
+| `scan_spec_annotations` | 解析 `.java` 的 `@Spec` + spec.md 规则编号 -> spec_rules / annotated_rules / unimplemented_rules / orphan_annotations / coverage_percent；**UNSPEC_CODE 漂移告警**（业务类无 @Spec 且无测试引用，MEDIUM 不阻断，排除表控噪声） |
+| `validate_spec_format` | spec.md 格式：Business Rules 段存在 + R 编号连续 |
+| `parse_test_results` | surefire + JaCoCo 聚合：unit_tests / contract_tests / coverage；**逐行 `source_lines`**（供 diff coverage 消费） |
+| `scan_test_stack` | 技术栈硬校验：禁 PowerMock / `@SpringBootTest` 起容器 |
+| `run_gate` | 门禁编排（全逻辑），见第五章 |
 
-#### 路径 C：spec 规则 ↔ 契约测试（CT-xx + contracts/）
-
-- **机制**：`testing.plan` 遍历 `contracts/` 每个接口契约（含 `rules` 字段或反查
-  business_rules），生成契约测试用例 `CT-<序号>`，每接口 1 正向 + 每错误码 1 反向，
-  每条标注对应规则编号。
-- **对齐**：契约测试通过 CT 编号与规则编号反查，在追溯矩阵中呈现 Rn -> CT-xx。
-
-### 2.3 事实采集：扫描脚本（不依赖 AI 自报）
-
-校验不能基于 AI 自述（试点证明 AI 会伪造覆盖率）。本项目用**确定性脚本**采集事实：
-
-| 采集项 | 脚本 | 输出 JSON 字段 |
-|---|---|---|
-| 代码侧 @Spec 分布 | scan_spec_annotations | annotated_rules / unimplemented_rules / orphan_annotations / coverage_percent |
-| 单测 @DisplayName 规则编号 | run_gate 步骤 5 内联解析 | displayname 规则编号集合 / untested_spec_rules |
-| 测试结果与覆盖率 | parse_test_results | unit_tests / contract_tests / coverage |
-| 技术栈合规 | scan_test_stack | forbidden_findings |
-
-脚本输出 JSON，AI 只读不改——这是「不依赖 AI 自报」的物理保证。
-
-### 2.4 双向一致性硬校验（gate 步骤 4-5）
-
-`run_gate` 对追溯链做**双向**对齐校验，任一方向断裂即 FAIL：
-
-| 方向 | 校验内容 | 断裂检出字段 | 判定 |
-|---|---|---|---|
-| **spec -> 代码** | spec.md 每条规则 MUST 有 @Spec 对应 | `unimplemented_rules` 非空 | FAIL |
-| **代码 -> spec** | 代码每个 @Spec MUST 指向 spec.md 真实规则 | `orphan_annotations` 非空 | FAIL |
-| **DisplayName -> @Spec**（正向） | 每条单测 @DisplayName 指向真实存在的 @Spec 规则（`^R\d+-`） | `displayname_mismatch_count > 0` | FAIL（require_displayname_match=true 时） |
-| **@Spec -> DisplayName**（反向，审计 P1） | 每条 @Spec 已注解规则 MUST 至少 1 条对应 @DisplayName 测试 | `untested_spec_rules` 非空 | FAIL（堵「标了 @Spec 不写测试也能过」缺口） |
-| **Spec 规则覆盖率** | 已注解规则 / 规则总数 | `< 100%` | FAIL |
-
-**反向校验（@Spec -> DisplayName）** 是审计 P1 补强：仅正向会让「标了 @Spec 占位但
-不写测试」成为漏网——反向校验强制每条已注解规则至少有 1 条测试覆盖，真正实现一一对应。
-
-### 2.5 追溯矩阵可视化（report）
-
-gate PASS 后，`testing.report` 遍历 spec.md 全部 business_rules（R1..Rn），为每条
-规则构建一行追溯记录，生成 `test-report.md`：
-
-| 规则 | @Spec 代码位置 | 单测 @DisplayName | 契约测试 CT |
-|---|---|---|---|
-| R1 | AccountService.transfer:42 | R1-转账金额为0应抛出INVALID_AMOUNT | CT-02 |
-| R2 | OrderService.updateStatus:18 | R2-订单状态流转合法 | CT-05 |
-| ... | ... | ... | ... |
-
-矩阵**必须覆盖 spec.md 全部规则**，无 @Spec 的规则也要列出（位置标注"未实现"），
-让缺口一目了然。
-
-### 2.6 实现方式总结
-
-| 环节 | 机制 | 载体 |
-|---|---|---|
-| spec 规则编号化 | Business Rules 段 R1..Rn 连续 | testing-tdd 的 spec-template replace |
-| 业务代码绑定规则 | @Spec 注解（RUNTIME + @Repeatable） | testing 扩展 annotations/ + implement append 强制 |
-| 测试代码绑定规则 | @DisplayName("Rn-...") 约定 | testing-tdd 的 tasks-template + implement append + 单测模板 |
-| 契约测试绑定规则 | CT-xx 编号 + contracts/ rules 字段 | testing.plan 命令 + 契约测试模板 |
-| 事实采集 | 确定性脚本输出 JSON | testing 扩展 5 组脚本 |
-| 一致性校验 | 双向对齐 + 阈值 + FAIL 阻断 | run_gate 步骤 4-7 |
-| 可视化 | 追溯矩阵覆盖全部规则 | testing.report 命令 + spec-trace-matrix 模板 |
-| 治理依据 | 宪法 Principle I 强制 @Spec | testing-tdd 的 constitution-template replace |
-
-> **核心约束链**：宪法 Principle I（强制 @Spec）-> spec-template（规则编号化）
-> -> tasks-template（双标签 [Rn] + 测试 REQUIRED）-> implement append（@Spec + @DisplayName）
-> -> gate（双向校验 + FAIL 阻断）-> report（矩阵可视化）。每一环都有上游依据、下游消费。
-
----
-
-## 三、全链路步骤：依赖数据源与生成产物
-
-### 3.1 依赖-产物流程图
-
-```
-┌──────────────────────────────────────────────────────────────────────────────────┐
-│ 阶段 │ 命令                  │ 可信数据源(输入)                │ 生成产物(输出)            │
-├──────────────────────────────────────────────────────────────────────────────────┤
-│ 治理 │ /speckit.constitution │ 用户输入                          │ constitution.md           │
-│      │                       │                                   │ (Principle I/II/III)      │
-├──────────────────────────────────────────────────────────────────────────────────┤
-│ 需求 │ /speckit.specify      │ constitution.md                   │ spec.md                   │
-│      │                       │                                   │ (US + Business Rules R1..)│
-├──────────────────────────────────────────────────────────────────────────────────┤
-│ 澄清 │ /speckit.clarify      │ spec.md                           │ (补全 spec.md)            │
-│ (可选)│                       │                                   │                           │
-├──────────────────────────────────────────────────────────────────────────────────┤
-│ 方案 │ /speckit.plan         │ spec.md                           │ plan.md                   │
-│      │                       │                                   │ contracts/                │
-│      │                       │                                   │ data-model.md             │
-│      │                       │                                   │ research.md               │
-├──────────────────────────────────────────────────────────────────────────────────┤
-│ 测试 │ /speckit.testing.plan │ spec.md (REQUIRED)                │ test-plan.md              │
-│ 计划 │ (扩展·手动)          │ plan.md (REQUIRED)                │ specs/<f>/docs/           │
-│      │                       │ contracts/ (REQUIRED)             │ (验收阈值+CT/UT用例       │
-│      │                       │ data-model.md (RECOMMENDED)       │  +前端测试项TC+排期)      │
-│      │                       │ research.md (OPTIONAL)            │                           │
-│      │                       │ ImpactReport (OPTIONAL,套风险档) │                           │
-├──────────────────────────────────────────────────────────────────────────────────┤
-│ 分析 │ /speckit.analyze      │ spec.md + plan.md + tasks.md      │ (一致性报告)              │
-│ (可选)│ (tasks 后 implement 前)│                                   │                           │
-├──────────────────────────────────────────────────────────────────────────────────┤
-│ 任务 │ /speckit.tasks        │ spec.md + plan.md + contracts/    │ tasks.md                  │
-│      │                       │                                   │ (骨架先行+单测先行        │
-│      │                       │                                   │  +双标签[USx][Rn])        │
-├──────────────────────────────────────────────────────────────────────────────────┤
-│ 实现 │ /speckit.implement    │ tasks.md                          │ 业务代码(@Spec rule=Rn)   │
-│      │ (implement append)   │ test-plan.md                      │ 单测(@DisplayName Rn-...) │
-│      │                       │ 模板(java-service/unit/contract) │ 契约测试(CT-xx)           │
-│      │   ┌─ 第4.5阶段 ─────┐│                                   │                           │
-│      │   │ run_gate         ││ [对抗测试·可选]                   │ (覆盖率自检 JSON)        │
-│      │   │ --check-only    ││                                   │                           │
-│      │   └─────────────────┘│                                   │                           │
-├──────────────────────────────────────────────────────────────────────────────────┤
-│      │ ↓↓↓ after_implement 钩子自动触发 (optional:false) ↓↓↓                         │
-├──────────────────────────────────────────────────────────────────────────────────┤
-│ 影响 │ /speckit.testing.     │ git diff (spec.md + 代码变更)    │ impact-report.md          │
-│ 分析 │ impact                │ spec.md (business_rules)          │ specs/<f>/docs/           │
-│ (自动·在前)│                   │ 源码 + @Spec 分布                 │ (risk_level               │
-│      │                       │                                   │  + affected_rules         │
-│      │                       │                                   │  +功能测试案例集TC)       │
-├──────────────────────────────────────────────────────────────────────────────────┤
-│ 门禁 │ /speckit.testing.gate │ 业务代码 + 测试代码               │ gate-result.md            │
-│ (自动·在后)│ (AI 调 run_gate) │ spec.md (business_rules)          │ specs/<f>/docs/           │
-│      │                       │ impact-report.md (取 risk_level) │ (脚本写,PASS/FAIL         │
-│      │                       │ testing-config.yml (阈值)        │  +覆盖率+覆盖矩阵)        │
-│      │                       │                                   │                           │
-│      │   FAIL ──> 阻断提交，返回 implement 修复                                   │
-├──────────────────────────────────────────────────────────────────────────────────┤
-│ 报告 │ /speckit.testing.     │ gate-result.md (校验已 PASS)     │ test-report.md            │
-│ (手动)│ report                │ impact-report.md (引用不重生成)   │ specs/<f>/docs/           │
-│      │                       │ spec.md (business_rules)          │ (Spec 追溯矩阵            │
-│      │                       │ @Spec 扫描 JSON + TestPlan CT-xx │  R->@Spec->单测->CT)      │
-└──────────────────────────────────────────────────────────────────────────────────┘
-```
-
-### 3.2 产物路径总览（v0.4 统一）
-
-核心 spec-kit 产物在 `specs/<feature>/`，扩展 4 个产物统一在 `specs/<feature>/docs/`
-（废弃 v0.3 的 `.specify/extensions/testing/` 路径）：
-
-| 产物 | 路径 | 产出命令 | 写入者 |
-|---|---|---|---|
-| 治理准则 | `specs/<feature>/constitution.md`（或根 `constitution.md`） | `/speckit.constitution` | AI |
-| 需求规格 | `specs/<feature>/spec.md` | `/speckit.specify` | AI |
-| 技术方案 | `specs/<feature>/plan.md` | `/speckit.plan` | AI |
-| 接口契约 | `specs/<feature>/contracts/` | `/speckit.plan` | AI |
-| 数据模型 | `specs/<feature>/data-model.md` | `/speckit.plan` | AI |
-| 调研 | `specs/<feature>/research.md` | `/speckit.plan` | AI |
-| 任务清单 | `specs/<feature>/tasks.md` | `/speckit.tasks` | AI |
-| 测试计划 | `specs/<feature>/docs/test-plan.md` | `/speckit.testing.plan` | AI |
-| 影响报告 | `specs/<feature>/docs/impact-report.md` | `/speckit.testing.impact` | AI |
-| 门禁结果 | `specs/<feature>/docs/gate-result.md` | `/speckit.testing.gate` | **run_gate 脚本**（AI 不补写） |
-| 测试报告 | `specs/<feature>/docs/test-report.md` | `/speckit.testing.report` | AI |
-
-> 前端 e2e 规划产物不单独建文件：TC 简版清单并入 `test-plan.md`，详细版功能
-> 测试案例集并入 `impact-report.md`（「功能测试案例集（e2e 规划）」段）。
-
-### 3.2.1 命令 × speckit 生成物依赖矩阵
-
-四个测试命令各自消费的 speckit 生成物（含 preset `speckit.implement`
-append 段）：
-
-| 命令 | 参考生成物（输入） | 必需性 | 产出 |
-|---|---|---|---|
-| `/speckit.testing.impact` | git diff / 源码+@Spec 分布 / spec.md | REQUIRED（源码可降级：空仓库仅语义分级） | impact-report.md |
-| `/speckit.testing.plan` | spec.md / plan.md / contracts/ | REQUIRED | test-plan.md |
-| | data-model.md | RECOMMENDED | |
-| | research.md / ImpactReport | OPTIONAL（套风险档阈值） | |
-| `/speckit.testing.gate` | 业务代码 / 测试代码 / spec.md | REQUIRED | gate-result.md（脚本写） |
-| | impact-report.md | REQUIRED（缺失即 FAIL） | |
-| | testing-config.yml | REQUIRED（缺失时降级：内置默认阈值并在结果中标注） | |
-| `/speckit.testing.report` | gate-result.md | REQUIRED（缺失/FAIL 拒绝生成） | test-report.md |
-| | impact-report.md（引用不重生成）/ spec.md / @Spec 扫描 JSON | REQUIRED | |
-| | test-plan.md（CT 反查） | RECOMMENDED（缺失降级：契约测试列标注"未生成测试计划"） | |
-| `speckit.implement`（preset append 段） | tasks.md / plan.md / contracts/ / data-model.md | REQUIRED（核心逻辑） | 业务代码 + 测试代码 |
-| | test-plan.md（UT-xx/CT-xx 清单与验收阈值） | IF EXISTS（存在则 MUST 参考） | |
-
-> 链路约定：plan（test-plan.md）→ tasks（按 test-plan.md 生成测试任务，
-> 缺失降级 contracts/+rules 推导）→ implement（参考 test-plan.md 对齐用例）
-> → gate（消费 impact 风险档）→ report（引用 impact + test-plan）。
-> 核心 `speckit.tasks` / `speckit.implement` 本身不读 test-plan.md（核心
-> 无 testing 扩展概念），参考行为由 testing-tdd preset 的 replace/append
-> 模板注入。
->
-> **降级约定**：所有 RECOMMENDED/OPTIONAL/IF EXISTS 输入缺失均不阻断命令——
-> report 缺 test-plan.md 时 CT 列标注"未生成测试计划"；implement 缺
-> test-plan.md 时按 contracts/+business_rules 生成测试任务；gate 缺
-> testing-config.yml 时用内置默认阈值。REQUIRED 输入缺失：impact/plan 报缺
-> 并指引先跑哪个命令，gate 的 impact-report 缺失即 FAIL（不降级）。
-
-### 3.3 数据流关键约束
-
-- **spec.md 是唯一事实来源**：business_rules 的 R1..Rn 贯穿 impact（分级）/ plan（生成用例）
-  / gate（@Spec/@DisplayName 对齐）/ report（矩阵）全链路；TC 关联规则同样取自 business_rules。
-- **impact 在前、gate 在后**：gate 前置检查 impact-report.md 存在（堵钩子链断裂），
-  gate 读 impact 的 risk_level 套阈值。
-- **gate-result.md 只由脚本写**：AI 不得补写/改判（直击 P0 伪造覆盖率）。
-- **report 引用而非重生成 ImpactReport**：避免重复执行影响分析。
-- **ImpactReport 对 plan 是可选输入**：plan 可在 impact 产出前独立运行（缺失用 default 阈值档）。
-- **TC 不进门槛**：功能测试案例集仅供 e2e 测试 AI 规划使用，gate 不校验 TC，
-  也不要求生成/执行 e2e 测试代码。
-
----
-
-## 命令
-
-| 命令 | 触发方式 | 作用 |
-|------|----------|------|
-| `/speckit.testing.impact` | 手动 / `after_implement` 钩子（自动，impact 在前） | 变更影响分析 + 风险分级 + 受影响规则编号 + **功能测试案例集（TC，供 e2e AI）** |
-| `/speckit.testing.plan` | 手动（plan 之后、tasks 之前） | 测试计划文档（用例清单 + 前端测试项 TC + 验收阈值） |
-| `/speckit.testing.gate` | 手动 / `after_implement` 钩子（自动，gate 在后） | AI 调 `run_gate` 脚本（全逻辑下沉）+ 仅读结果判定 PASS/FAIL |
-| `/speckit.testing.report` | 手动（gate 通过后） | 测试结果 + Spec 追溯矩阵 |
-
-## 钩子
-
-| 钩子 | 时机 | 绑定命令 | optional |
-|------|------|----------|----------|
-| `after_implement` | `speckit.implement` 执行后 | `speckit.testing.impact` -> `speckit.testing.gate`（列表形式，按序执行） | false（自动） |
-
-## 全链路流程（简版）
-
-```
-spec.md 更新
-  └─> speckit.plan（生成 contracts/ + plan.md + data-model.md）
-      └─> testing.plan（测试计划，手动，依赖已有 md）
-          └─> speckit.tasks（骨架先行 -> 单测任务 -> 契约测试任务 -> 业务代码）
-              └─> speckit.implement
-                  ├─ 1. 骨架（mvn compile 通过）
-                  ├─ 2. 单测（JUnit5 + Mockito，@DisplayName 标规则，先 Red）
-                  ├─ 3. 契约测试（WireMock + HTTP 客户端调用 + 断言响应，不起容器）
-                  ├─ 4. 业务代码（@Spec 注解，TDD 让测试 Green）
-                  └─ 5.【第 4.5 阶段·对抗测试 + 覆盖率达标，可选】
-                      ├─ 调 run_gate --check-only 跑覆盖率自检
-                      ├─ 第 1 轮：四类对抗（反例/边界/异常路径/并发竞态）
-                      ├─ 第 2 轮起：目的性覆盖率补洞（辅助类/未覆盖分支）
-                      ├─ 关键路径必测：high 风险规则方法 MUST 至少 1 条对抗用例
-                      └─ 循环上限 max_iterations（默认 3），超限如实进 gate FAIL
-                  └─[after_implement 自动]─> testing.impact（影响分析 + 风险分级
-                      + 功能测试案例集 TC 写入 impact-report.md，供前端 e2e 测试 AI）
-                      └─> testing.gate（AI 调 run_gate 脚本：mvn clean test + 4 步校验
-                          + 阈值比对 + 脚本写 gate-result.md，AI 仅读结果）
-                          └─ PASS ─> testing.report（追溯矩阵，手动）
-                          └─ e2e 规划（可选）─> 转发 impact-report.md 功能测试案例集
-                              给前端 e2e 测试 AI（不进门槛，不写 e2e 代码）
-```
-
-> 详尽的依赖-产物关系见上方「三、全链路步骤」流程图。
-
-## @Spec 注解
-
-业务代码用 `@Spec` 注解标注其实现的 Spec 规则：
+### 2.5 @Spec 注解（annotations/）
 
 ```java
-@Spec(capability = "transfer", rule = "R1", description = "金额校验")
+@Spec(capability = "transfer", rule = "FR-001", description = "金额校验")
 public TransferResult transfer(...) { ... }
 ```
 
-门禁通过扫描 `@Spec` 注解自动校验"Spec 规则 -> 代码实现"覆盖完整性，
-单测侧通过 `@DisplayName("R1-...")` 实现双向对齐。详见「二、核心追溯机制」。
+- `@Repeatable` 支持一个方法标注多条规则；`@Retention(SOURCE)`——**仅源码级标记**：
+  门禁靠脚本静态正则扫描 `.java` 文本，无运行时反射消费方。
+- `@Spec` 仅限 Java 业务代码；前端追溯用 `describe("FR-xxx-Rm-...")` 命名规范对齐。
 
-## 测试技术栈（必需前置）
+### 2.6 配套预设 testing-tdd（改核心行为）
 
-本扩展门禁针对 Java 项目，以下技术栈为**必需前置条件**：
-
-| 组件 | 作用 | 必需性 |
-|------|------|--------|
-| JUnit 4/5 | 测试框架 | REQUIRED |
-| Mockito | Mock 依赖（@Mock / @InjectMocks） | REQUIRED |
-| Surefire | 测试执行 + surefire-reports 生成 | REQUIRED |
-| JaCoCo | 覆盖率插桩（line/branch/method/instruction/complexity） | REQUIRED |
-
-**禁用**：PowerMock（覆盖率失真）、`@SpringBootTest` 起容器。
-
-> 缺 JaCoCo/surefire 报告 -> 门禁 FAIL（不降级）。输出 pom.xml 配置参考。
-> 唯一降级：非 Java 项目（无 java/mvn）-> @Spec 静态扫描。
-
-## 门禁脚本化（run_gate，v0.4 核心）
-
-v0.3 的 gate 由 AI 编排 4 个脚本 + AI 比对阈值 + AI 写 gate-result.md，试点证明
-AI 会伪造（声称 96% 实际 62.9%）。v0.4 把 gate 的**全部确定性逻辑下沉到
-`run_gate` 脚本**（三语言 sh/ps/py 字节级等价），AI 仅读结果不能改判：
-
-| 维度 | v0.3（AI 编排） | v0.4（脚本编排） |
-|---|---|---|
-| mvn test | AI 跑 | run_gate 跑，强制 `mvn clean test`（杜绝 target 残留污染） |
-| 4 脚本调用 | AI 逐个调 | run_gate 内部串行调 |
-| @DisplayName 解析 | AI 解析 | run_gate 内联解析 |
-| 阈值比对 / PASS/FAIL 判定 | AI | run_gate |
-| gate-result.md 写入 | AI 写 | run_gate 脚本直接写 |
-| AI 角色 | 全权 | 仅读 stdout JSON + 按判定输出指令 |
-
-`run_gate` 9 步职责：0.检查 impact-report.md 存在 / 1.mvn clean test /
-2.scan_test_stack / 3.parse_test_results / 4.scan_spec_annotations /
-5.内联解析 @DisplayName（双向对齐）/ 6.读 risk_level+config / 7.逐项比对阈值 /
-8.写 gate-result.md + stdout 输出判定 JSON。
-
-`run_gate --check-only` 子模式：供 implement 第 4.5 阶段对抗测试调用，
-只跑不写，输出覆盖率与阈值差距 JSON。
-
-> 直击 P0：#1 Agent 伪造覆盖率（脚本判定）/ #2 target 残留污染（强制 clean）
-> / #3 impact 未生成（前置检查 impact-report.md 存在）。
-> 注：脚本化是"给 AI 真实数据 + 降低伪造难度 + 可审计"，非硬强制（AI 仍可不
-> 调脚本而自行声称，真正强制需改执行模型）。
-
-## 对抗测试（v0.4 新增）
-
-在常规 TDD 用例（正常/异常/边界）之外，AI 主动生成的"试图攻破自己代码"的
-补充用例集。目标：用真实测试数据把 JaCoCo 覆盖率推到套用阈值，而非堆砌通过用例。
-
-| 轮次 | 目的 | 用例类型 |
-|---|---|---|
-| 第 1 轮 | 攻破自己代码 | 反例/边界/异常路径/并发竞态（仅 high 风险规则） |
-| 第 2 轮 | 目的性覆盖率补洞 | 辅助类（DTO/枚举/异常处理器/Controller）+ 未覆盖分支 |
-| 第 3 轮 | 兜底 | 继续补洞 + 可选重构 |
-
-**关键路径必测**（独立 MUST，与 gate 阈值脱钩）：impact 标记 high 风险规则
-（资金/权限/原子性/数据完整性）的 public 方法 MUST 至少 1 条对抗用例。
-
-## 配套预设 testing-tdd
-
-扩展只加新能力（命令/钩子/扫描），**不改 spec-kit 核心行为**。要让
-`/speckit.constitution` 自动预置 Principle I（Spec Traceability，置首）、
-`/speckit.tasks` 强制 TDD
-（消灭核心 "Tests OPTIONAL"）、`/speckit.implement` 强制 @Spec + 引用模板，
-需配套安装 `testing-tdd` 预设：
+扩展只加新能力，**不改核心模板**。要强制 TDD 行为，需配装预设：
 
 | 覆盖 | 策略 | 作用 |
-|------|------|------|
-| `constitution-template` | replace | 预置 Principle I（Spec Traceability 置首）+ Principle II（中文文档 + 代码重要部分中文注释）+ Principle III（测试技术栈） |
-| `spec-template` | replace | 加 `## Business Rules`（REQUIRED）+ Error Code Definitions（可选） |
-| `tasks-template` | replace | 测试 REQUIRED + 骨架先行 + 单测先行 + 双标签 `[US1] [R1]` + **测试任务参考 test-plan.md 用例清单**（存在则用例数量/编号对齐，缺失降级 contracts/+rules 推导并注明） |
-| `speckit.implement` 命令 | append | 强制 @Spec 注解 + 约定参考 + 技术栈 + 单测先行 + 第 4.5 阶段对抗测试 + 第 0 节参考生成物（test-plan.md IF EXISTS）+ 第 7 段前端 e2e 规划预留（不写 e2e 代码） |
+|---|---|---|
+| `constitution-template` | replace | Principle I Spec Traceability 置首 + II 中文文档/注释 + III 测试技术栈（含前端 vitest/e2e 可选+确定性句） |
+| `spec-template` | replace | spec.md 使用上游原版模板（`### Functional Requirements` 段 FR-001 编号，spec-template 已由领导锁定不可改） |
+| `tasks-template` | replace | 测试 REQUIRED + 骨架先行 + 单测先行 + 双标签 `[USx] [FR-xxx]` + Phase 2 checkpoint `mvn test-compile` + Red 判定三条件 + 前端任务区（可选） |
+| `speckit.implement` | append | @Spec 强制 + 技术栈 + 单测先行 + **Red 判定三条件** + 第 4.5 阶段对抗测试 + 直接测试覆盖约定 + 插桩日志清理 + 禁改 test 适配 code 铁律 + 前端测试/e2e 可选约定与选择执行 |
 
-详见 `presets/testing-tdd/`。
+**双标签设计**：`[USx]` 服务 spec-kit 核心任务编排，`[FR-xxx]` 服务 gate 的
+@Spec/@DisplayName 双向对齐（顶层锚 FR-xxx，测试侧子编号 FR-xxx-Rm）——
+两标签各司其职，缺一不可。
 
-## 安装
+---
 
-三种方式，任选其一：
+## 三、全流程：端到端怎么跑
 
-**方式 A（直装，推荐给终端用户，装在任何标准 spec-kit 上）**：
+### 3.1 依赖-产物流程图（全链路）
+
+```
+┌─ 治理 ─────────────────────────────────────────────────────────────┐
+│ /speckit.constitution        ──► constitution.md（Principle I/II/III）│
+├─ 需求 ─────────────────────────────────────────────────────────────┤
+│ /speckit.specify             ──► spec.md（US + Functional Requirements FR-001..）│
+├─ 方案 ─────────────────────────────────────────────────────────────┤
+│ /speckit.plan                ──► plan.md + contracts/ + data-model   │
+├─ 测试计划（手动）──────────────────────────────────────────────────┤
+│ /speckit.testing.plan        ──► docs/test-plan.md（CT/UT+TC+阈值）   │
+├─ 任务 ─────────────────────────────────────────────────────────────┤
+│ /speckit.tasks               ──► tasks.md（骨架先行+单测先行+[USx][FR-xxx]）│
+├─ 实现 ─────────────────────────────────────────────────────────────┤
+│ /speckit.implement           ──► 骨架 → 单测(Red) → 契约 → 代码(Green) │
+│   └─ 第 4.5 阶段对抗测试（run_gate --check-only 自检，可选）           │
+├─ after_implement 钩子（自动，optional:false）────────────────────────┤
+│  ① /speckit.testing.impact  ──► docs/impact-report.md               │
+│     （受影响规则 + 风险分级 + 功能测试案例集 GWT）                     │
+│  ② /speckit.testing.gate    ──► docs/gate-result.md（run_gate 脚本写）│
+│     FAIL ─► 阻断提交，返回 implement 修复                            │
+├─ 报告（手动）───────────────────────────────────────────────────────┤
+│ /speckit.testing.report      ──► docs/test-report.md（追溯矩阵）      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 3.2 钩子链内部：impact -> gate
+
+```
+implement 完成
+  ▼
+impact：git diff + 源码扫描 -> 受影响规则 FR-xxx 清单
+        ├─ 每条规则 risk_level：direct high / indirect medium / edge low
+        │    （Mapper/SQL/yml/pom 变更自动升一级，high 封顶——规则化评分，
+        │     替代 AI 自由裁量，让 gate 5.5 对抗硬判的"high"判定可复现）
+        └─ 功能测试案例集：命中规则的 GWT 用例（带 covered_rules 字段）
+  ▼
+gate：AI 调 run_gate（全逻辑下沉，不能改判）
+        前置检查 impact-report.md 存在（缺失即 FAIL）
+        └─ 结果 JSON -> AI 输出 PASS/FAIL 指令
+```
+
+### 3.3 产物路径（统一在 `specs/<feature>/docs/`）
+
+| 产物 | 路径 | 写入者 |
+|---|---|---|
+| 测试计划 | `specs/<feature>/docs/test-plan.md` | AI（testing.plan） |
+| 影响报告 | `specs/<feature>/docs/impact-report.md` | AI（testing.impact） |
+| 门禁结果 | `specs/<feature>/docs/gate-result.md` | **run_gate 脚本**（AI 不补写） |
+| 测试报告 | `specs/<feature>/docs/test-report.md` | AI（testing.report） |
+
+前端 e2e 规划产物为**可选**且不单独建文件：TC 简版并入 test-plan.md，详细版功能案例集并入
+impact-report.md（「功能测试案例集（e2e 规划）」段）。默认不生成、不生成不 FAIL。
+
+---
+
+## 四、追溯机制：Spec ↔ 代码 ↔ 测试
+
+### 4.1 追溯链全景
+
+```
+     spec.md（### Functional Requirements 段 FR-001..FR-xxx）← 唯一事实来源
+        │
+   ┌────┴─────┐
+   ▼          ▼
+ 业务代码    测试代码
+ @Spec       @DisplayName("FR-001-R1-...")
+ rule=FR-001     │
+   └─────┬─────┘
+         ▼
+  scan + 双向对齐校验（run_gate）
+         ▼
+  追溯矩阵（test-report.md）FR-001 -> @Spec 位置 -> 单测 -> CT-xx
+         ▼
+ （可选参考层）test-plan.md 业务规则细分段（FR-001-R1..，plan 可不跑，
+         不承载权威——无 plan 时测试作者按 FR 自编号）
+```
+
+### 4.2 三条绑定路径
+
+| 路径 | 机制 | 采集 |
+|---|---|---|
+| spec ↔ 代码 | 实现规则的 public 方法 MUST 标 `@Spec(rule="FR-001")` | scan_spec_annotations |
+| spec ↔ 单测 | `@DisplayName("FR-001-R1-场景描述")`，描述须含期望结果 | run_gate 内联解析 |
+| spec ↔ 契约测试 | plan 遍历 `contracts/` 生成 CT-xx，每接口 1 正向 + 每错误码 1 反向 | 追溯矩阵反查 |
+
+### 4.3 双向一致性硬校验（run_gate，任一方向断裂即 FAIL）
+
+| 方向 | 校验 | 断裂字段 | 判定 |
+|---|---|---|---|
+| spec -> 代码 | 每条规则 MUST 有 @Spec | `unimplemented_rules` 非空 | FAIL |
+| 代码 -> spec | 每个 @Spec MUST 指向真实规则 | `orphan_annotations` 非空 | FAIL |
+| DisplayName -> @Spec（正向） | 每条单测指向存在的规则 | `displayname_mismatch_count > 0` | FAIL |
+| @Spec -> DisplayName（反向） | 每条已注解规则 MUST 至少 1 条测试 | `untested_spec_rules` 非空 | FAIL（堵「标了 @Spec 不写测试」缺口） |
+| 规则覆盖率 | 已注解 / 总数 | < 100% | FAIL |
+
+---
+
+## 五、门禁原理：run_gate 如何裁决
+
+### 5.1 为什么脚本判定
+
+v0.3 的 gate 由 AI 编排脚本 + AI 比对阈值 + AI 写结果——试点证明 AI 会伪造
+（声称 96% 实际 62.9%）。v0.4 起把**全部确定性逻辑下沉到 `run_gate` 脚本**，
+AI 仅读 stdout JSON + 按判定输出指令，不能改判。
+
+| 环节 | v0.3（AI 编排） | 现状（脚本编排） |
+|---|---|---|
+| mvn test | AI 跑 | run_gate 跑，强制 `mvn clean test`（杜绝 target 残留污染） |
+| 脚本调用 / @DisplayName 解析 / 阈值比对 / 判定 | AI | run_gate 内部串行 |
+| gate-result.md 写入 | AI 写 | 脚本写 |
+| AI 角色 | 全权 | 仅读结果 |
+
+> 诚实边界：run_gate 是"最大化脚本化"妥协——钩子由 AI 触发、结果由 AI 转述，
+> 非硬强制；真实数据 + 降低伪造难度 + 可审计是当前可靠上限。
+
+### 5.2 run_gate 步骤
+
+```
+0. 前置检查 impact-report.md 存在（缺失即 FAIL）
+1. 模块定位（AI 辅助）：gate.md 强制先 find . -name pom.xml -maxdepth 3，
+   把 --project 指向含 pom.xml 的模块目录；传错 -> 降级 + degraded_reason
+   建议命令（脚本不自动探测——宁可降级不执行，不可错跑）
+2. mvn clean test 全量执行（回归盲区兜底，永远跑）
+3. scan_test_stack（技术栈硬校验：缺报告即 FAIL，不降级）
+4. parse_test_results（surefire + JaCoCo，聚合覆盖率 + source_lines 行级）
+5. scan_spec_annotations（@Spec 分布 + UNSPEC_CODE 漂移告警 MEDIUM）
+6. 内联解析 @DisplayName -> 双向对齐校验
+7. 5.5 关键路径对抗校验（critical_path_required 只对 high 风险规则硬判）
+8. diff coverage 判定（见 5.3）
+9. SOFT 段存在性检查（见 5.4）
+10. 逐项比对阈值 -> PASS/FAIL（HARD）-> 写 gate-result.md + stdout JSON
+```
+
+`run_gate --check-only` 子模式：供 implement 第 4.5 阶段对抗测试自检，只跑不写。
+
+### 5.3 覆盖率判定：JaCoCo diff coverage（v0.6.1 简化）
+
+**原则：变更行管阈值，不管执行**——全量 `mvn clean test` 永远跑（回归兜底），
+阈值只对 **git 变更行**强制（存量低覆盖行不在本次改动则不拖累）：
+
+```
+git diff --unified=0（--diff-base <branch> 时先 git merge-base 得 base）
+   ▼ 变更行集合
+与 JaCoCo 行级报告 source_lines 按 package/file 求交
+   ▼
+变更行覆盖率 >= 阈值（--diff-threshold，默认 config 80）？否则 FAIL
+```
+
+- 无 Java 变更 -> 跳过该维度；无 git 仓库 -> 回退全量聚合阈值（宁严勿松）；
+  新增文件全行视作变更行；test 文件/未跟踪文件行不计入；多模块按模块匹配报告后聚合。
+- 相比包级作用域方案：行级更精确，且天然无「作用域声明/越界检测/空作用域」问题。
+
+### 5.4 AI 交叉验证（SOFT，不改判）
+
+run_gate 只做结构 HARD 判定，语义正确性由 AI 补：gate 步骤 3 要求 AI 在
+gate-result.md 追加 `## AI 交叉验证（SOFT，不影响判定）` 段，检查五维：
+规则语义 / 断言质量 / 覆盖率真实性 / @Spec 放置 / **直接测试覆盖**（每条规则
+至少 1 个直接单测，仅被编排间接覆盖要 WARN）。
+
+- run_gate 只读正则检查该标题，缺失 -> WARN + `soft_missing: true`（**不 FAIL**——
+  脚本不因 SOFT 缺失放行/阻断，AI 也不因 SOFT 存在而改判）；
+- 写 gate-result.md 时**保留已有 AI 段**（追加非覆盖），防"补段后重跑"复现。
+
+### 5.5 T1/T2 双门禁框架
+
+| 目标 | 含义 | 判定工具 |
+|---|---|---|
+| **T2 运行正确性**（必要条件） | 代码没有运行错误 | 脚本 HARD：mvn clean test 全绿 + 覆盖率阈值 + diff coverage |
+| **T1 业务一致性**（目的） | 测试能测出"是否按业务实现" | 混合：@Spec/@DisplayName 双向对齐（脚本 HARD）+ 对抗用例（脚本 HARD）+ AI 交叉验证（SOFT） |
+
+gate FAIL 后先归因是 T2 缺口（补分支/补实现）还是 T1 缺口（补场景/补直接
+测试/回 spec），再按**漂移决策矩阵**处置：
+
+| 漂移类型 | 默认处置 |
+|---|---|
+| code 不满足 spec | 改 code，跑 test 验证 |
+| test 漏场景 | 补测试（由 spec 派生逻辑驱动，**禁改 test 适配 code 铁律**） |
+| spec 有歧义/错误 | 回 spec 澄清（AI 不得擅自改，交用户/PM） |
+| code 多于 spec | 删 code 或补 spec 二选一，SOFT 段标注，人工决策 |
+
+### 5.6 对抗测试与 Red 判定
+
+- **对抗测试**（implement 第 4.5 阶段）：AI 主动"攻破自己代码"——第 1 轮
+  反例/边界/异常/并发（high 风险规则），第 2 轮起目的性覆盖率补洞
+  （辅助类/未覆盖分支），循环上限 `max_iterations`（默认 3）；high 风险规则
+  public 方法 MUST 至少 1 条对抗用例（`critical_path_required` 门禁硬判）。
+- **Red 判定三条件**（命令级硬规则，修 8/18「编译失败冒充红灯」P0）：
+  ① `mvn test-compile` EXIT=0（骨架与测试签名一致）② `mvn test -Dtest=...`
+  输出含断言失败特征 ③ 编译错误不是 Red——回补骨架再验①②。
+  测试编译失败 -> 回补骨架，**不得进入 Green**。
+
+---
+
+## 六、风险分级与前端测试
+
+### 6.1 impact 风险分级（规则化，高封顶）
+
+| 命中方式 | 等级 | 说明 |
+|---|---|---|
+| 直接命中 | high | 改 Controller/Service 方法签名；改动文件即实现该规则 |
+| 间接命中 | medium | 调用链 / import 反推、同包引用 |
+| 边缘 | low | 注释 / 样式 / 工具类 / 纯重构 |
+
+**提升规则**（各升一级，high 封顶）：`*Mapper.java` / `*.sql` / Flyway；
+`pom.xml` / `package.json`；`application*.yml`。
+
+### 6.2 e2e 用例选择执行（impact 驱动）
+
+```
+impact 受影响规则 ∩ 功能用例集 covered_rules ──► 命中用例
+        ──► npx playwright test --grep <用例 ID>（只跑受影响用例）
+```
+
+不命中即不跑（避免全量慢跑）；covered_rules 与受影响规则均用顶层锚
+FR-xxx 格式（子编号 FR-xxx-Rm 不进求交）；缺 covered_rules 的用例降级
+手工。选择机制 **不替代**确定性 stub（stub 外部不确定依赖，禁真实调用）
+——两者叠加。
+
+前端约定：**前端测试与 e2e 为可选实施**（默认不做、不做不 FAIL，gate 不
+校验）；如选择实施，改动 .vue/.js 应有对应组件测试（vitest）；e2e MUST
+确定性（stub 外部不确定依赖——HTTP API / WS 推送 / 第三方接口按项目实际
+拦截注入固定数据 + 显式超时双向断言）；真实链路 e2e 仅手工/定时慢跑，
+**不进门禁**。
+
+---
+
+## 七、测试技术栈（必需前置）
+
+| 组件 | 作用 | 必需性 |
+|---|---|---|
+| JUnit 4/5 | 测试框架 | REQUIRED |
+| Mockito | Mock 依赖 | REQUIRED |
+| Surefire | 测试执行 + surefire-reports | REQUIRED |
+| JaCoCo | 覆盖率插桩（含行级 source_lines） | REQUIRED |
+
+**禁用**：PowerMock（覆盖率失真）、`@SpringBootTest` 起容器（契约测试用
+WireMock 桩）。缺 JaCoCo/surefire 报告 -> 门禁 FAIL（**不降级**）。
+唯一降级：非 Java 项目（无 java/mvn）。
+
+---
+
+## 八、安装
+
+三种方式，任选其一。
+
+**方式 A（直装，发布版）**：
 
 ```bash
-# 装扩展
 specify extension add testing \
   --from https://raw.githubusercontent.com/yaorui2003/spectest/main/releases/testing-1.1.2.zip
-# 装配套预设（预设会 replace 核心模板：宪法 / spec-template / tasks / implement）
 specify preset add testing-tdd \
   --from https://raw.githubusercontent.com/yaorui2003/spectest/main/releases/testing-tdd-1.1.2.zip
 ```
 
-> `extension add --from` 对非 catalog 来源会弹"Untrusted Source"确认，属正常安全提示，
-> 按 `y` 继续即可。
+> `extension add --from` 对非 catalog 来源会弹 "Untrusted Source" 确认，按 `y` 继续。
+> 当前仓库 `releases/` 已发布 1.1.2；更新版本发布后替换 URL 中的版本号即可。
 
-**方式 A'（大陆网络备选，GitHub 直连被墙时）**：`--from` 用 python 下载且无重试，
-大陆网络下可能超时。改用 curl（自动重试）下载 + `--dev` 本地安装：
+**方式 A'（大陆网络备选，raw 直连被墙/丢包时）**：用 curl（自动重试）下载解压后
+本地安装：
 
 ```bash
-# 下载并解压（--retry 应对间歇性连接失败）
 curl -fsS --retry 8 --retry-all-errors -o /tmp/ext-testing.zip \
   https://raw.githubusercontent.com/yaorui2003/spectest/main/releases/testing-1.1.2.zip
 curl -fsS --retry 8 --retry-all-errors -o /tmp/ext-preset.zip \
@@ -568,85 +410,54 @@ curl -fsS --retry 8 --retry-all-errors -o /tmp/ext-preset.zip \
 mkdir -p /tmp/ext-testing /tmp/ext-preset
 python3 -c "import zipfile; zipfile.ZipFile('/tmp/ext-testing.zip').extractall('/tmp/ext-testing')"
 python3 -c "import zipfile; zipfile.ZipFile('/tmp/ext-preset.zip').extractall('/tmp/ext-preset')"
-
-# 安装（注意 --dev 是 flag，路径作参数）
 specify extension add /tmp/ext-testing --dev
 specify preset add testing-tdd --dev /tmp/ext-preset --priority 10
 ```
 
-> 也可在 `/etc/hosts` 固定 `185.199.111.133 raw.githubusercontent.com` 提升 raw 直连
-> 稳定性（需 sudo，一次性）。GitHub Release 版 URL：
-> `https://github.com/yaorui2003/spectest/releases/download/v1.1.2/testing-1.1.2.zip`。
+> GitHub Release 版 URL：`https://github.com/yaorui2003/spectest/releases/download/v1.1.2/testing-1.1.2.zip`。
 
-**方式 B（dev 直装，调试期快速迭代）**：
+**方式 B（开发调试，改源码直接生效）**：
 
 ```bash
-# 装扩展
 specify extension add --dev <spec-kit>/extensions/testing
-# 装配套预设
 specify preset add --dev <spec-kit>/presets/testing-tdd --priority 10
 ```
 
-**方式 C（bundle 一键装，发布期，需扩展与预设已可解析）**：
+**方式 C（bundle 一键装，需扩展与预设已可解析）**：
 
 ```bash
 specify bundle install speckit-testing   # 一键装扩展 + 预设
 ```
 
-> 调试期建议方式 B（改源码直接生效，无需重装）。
+> 调试期建议方式 B。预设会 replace 核心模板（宪法 / spec-template / tasks / implement）。
 
-## 卸载 / 切回普通 spec-kit
+---
 
-在任意标准 spec-kit 项目上，装上的东西可干净移除、恢复原样：
+## 九、配置
+
+配置位于 `.specify/extensions/testing/testing-config.yml`（安装时从模板复制，
+项目可覆盖）：
+
+| 段 | 关键项 | 默认 |
+|---|---|---|
+| `gate` | 行/分支/方法/指令/复杂度覆盖率、通过率 | 80/70/80/85/70、100% |
+| `gate` | `ai_cross_validation` | true |
+| `gate` | `diff_coverage_threshold` / `diff_base` | 80 / ""（工作区 vs HEAD） |
+| `gate` | `spec_traceability`：规则覆盖 100% + `require_displayname_match` | true |
+| `test_stack` | 禁 PowerMock / `@SpringBootTest` | true |
+| `scan` | `unspec_exclude_patterns`（UNSPEC 告警额外排除） | [] |
+| `risk_overrides` | high/medium/low 三档阈值（单调递减） | high 90% 起 / low 70% 起 |
+| `adversarial` | `enabled` / `max_iterations` / `critical_path_required` | true / 3 / true |
+
+## 十、卸载 / 切回普通 spec-kit
 
 ```bash
 specify preset remove testing-tdd    # 移除预设，宪法/模板恢复 spec-kit 默认
 specify extension remove testing     # 移除扩展，命令/钩子/配置全部卸载
 ```
 
-> 只想临时停用（保留安装）可用 `specify preset disable testing-tdd` /
-> `specify extension disable testing`，随时 `enable` 恢复。
-> `extension remove` 同样有确认提示，按 `y` 继续。
-
-## 配置
-
-门禁阈值与风险分级配置于
-`.specify/extensions/testing/testing-config.yml`（首次安装时从模板复制）。
-
-| 风险 | 行覆盖率 | 方法覆盖率 | 指令覆盖率 | 复杂度覆盖率 | 单测通过率 | 契约通过率 |
-|------|----------|------------|------------|--------------|------------|------------|
-| high | >=90% | >=90% | >=90% | >=80% | 100% | 100% |
-| medium | >=80% | >=80% | >=85% | >=70% | 100% | >=95% |
-| low | >=70% | >=70% | >=80% | >=60% | 100% | >=95% |
-
-v0.4 新增 `adversarial` 段：
-
-```yaml
-adversarial:
-  enabled: true              # 是否启用对抗测试阶段（默认 true）
-  max_iterations: 3          # 循环上限（默认 3）
-  critical_path_required: true # high 风险规则方法 MUST 至少 1 条对抗用例
-```
-
-## 产物路径（v0.4 统一）
-
-4 个产物统一存放于 `specs/<feature>/docs/*.md`（废弃 v0.3 的
-`.specify/extensions/testing/` 路径）：
-
-| 产物 | 路径 |
-|---|---|
-| 测试计划 | `specs/<feature>/docs/test-plan.md` |
-| 影响报告 | `specs/<feature>/docs/impact-report.md` |
-| 门禁结果 | `specs/<feature>/docs/gate-result.md`（run_gate 脚本写） |
-| 测试报告 | `specs/<feature>/docs/test-report.md` |
-
-## 宪法依据
-
-本扩展的治理基础是项目宪法 Principle I（Spec Traceability，置首）：
-所有业务代码 MUST 用 `@Spec` 注解标注其实现的 Spec 规则。
-Principle II（中文文档 + 代码重要部分中文注释）要求高风险规则方法加中文注释
-说明业务语义，支撑后续审计与对抗测试定位。
-Principle III（测试技术栈）由门禁 scan_test_stack 强制。
+> 临时停用可 `specify preset disable testing-tdd` / `specify extension disable testing`，
+> 随时 `enable` 恢复。
 
 ## 许可证
 

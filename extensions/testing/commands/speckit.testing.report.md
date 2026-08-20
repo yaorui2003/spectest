@@ -6,7 +6,7 @@ description: "Speckit Testing 测试报告：校验门禁已执行，汇总测�
 
 本命令为手动命令（不绑钩子），在 `speckit.testing.gate` 通过后运行。
 校验门禁已执行，汇总测试结果（覆盖率与通过率），生成 Spec 追溯矩阵
-（R1..Rn -> @Spec 代码位置 -> 单测 @DisplayName -> 契约测试 CT 编号），
+（FR-001..FR-xxx -> @Spec 代码位置 -> 单测 @DisplayName -> 契约测试 CT 编号），
 引用（不重生成）`ImpactReport` 产物，最终引用 `spec-trace-matrix`
 模板组织文档结构。
 
@@ -22,7 +22,7 @@ description: "Speckit Testing 测试报告：校验门禁已执行，汇总测�
 |---|---|---|
 | `GateResult` 产物（`specs/<feature>/docs/gate-result.md`） | REQUIRED（缺失或 FAIL 时拒绝生成报告） | 校验门禁已 PASS + 汇总测试结果（覆盖率/通过率） |
 | `ImpactReport` 产物（`specs/<feature>/docs/impact-report.md`） | REQUIRED（引用，不重复生成） | 呈现 risk_level + affected_rules 摘要 |
-| `spec.md`（`business_rules` 规则编号清单） | REQUIRED | 追溯矩阵规则清单（R1..Rn） |
+| `spec.md`（`### Functional Requirements` 段规则编号清单） | REQUIRED | 追溯矩阵规则清单（FR-001..FR-xxx） |
 | 扫描脚本产出的覆盖矩阵（`@Spec` 注解分布 JSON） | REQUIRED | annotated_rules 代码位置（追溯矩阵来源） |
 | `TestPlan` 产物（`specs/<feature>/docs/test-plan.md`） | RECOMMENDED（缺失时降级：追溯矩阵契约测试列标注"未生成测试计划"，不阻断报告生成） | CT-xx 按规则编号反查（追溯矩阵契约测试列） |
 
@@ -70,12 +70,12 @@ description: "Speckit Testing 测试报告：校验门禁已执行，汇总测�
 
 ### 步骤 3：生成 Spec 追溯矩阵
 
-遍历 `spec.md` 全部 `business_rules` 规则编号（R1..Rn），为每条规则
+遍历 `spec.md` 全部 FR 段规则编号（FR-001..FR-xxx），为每条规则
 构建一行追溯记录：
 
 | 字段 | 来源 |
 |------|------|
-| 规则编号 | spec.md business_rules |
+| 规则编号 | spec.md FR 段 |
 | @Spec 代码位置 | 扫描脚本 JSON 的 `annotated_rules` |
 | 单测 @DisplayName | 解析单测方法 @DisplayName 中的规则编号 |
 | 契约测试 CT 编号 | 测试计划 TestPlan 的 CT-xx（按规则编号反查） |
@@ -85,7 +85,7 @@ description: "Speckit Testing 测试报告：校验门禁已执行，汇总测�
 > `speckit.testing.plan` 后重生成报告。
 
 追溯矩阵记入 `TraceabilityMatrix`，每行一条 SpecRule，必须覆盖
-spec.md 全部 business_rules 规则（无 @Spec 的规则对应位置标注
+spec.md 全部 FR 段规则（无 @Spec 的规则对应位置标注
 "未实现"）。
 
 ### 步骤 4：引用 ImpactReport 产物（不重生成）
@@ -126,10 +126,10 @@ gate_run_at: 2026-08-10T...
 ## Spec 追溯矩阵（TraceabilityMatrix）
 | 规则 | @Spec 代码位置 | 单测 @DisplayName | 契约测试 CT |
 |------|----------------|-------------------|-------------|
-| R1 | AccountService.transfer:42 | R1-转账金额为0应抛出INVALID_AMOUNT | CT-02 |
-| R2 | OrderService.updateStatus:18 | R2-订单状态流转合法 | CT-05 |
+| FR-001 | AccountService.transfer:42 | FR-001-R1-转账金额为0应抛出INVALID_AMOUNT | CT-02 |
+| FR-002 | OrderService.updateStatus:18 | FR-002-R1-订单状态流转合法 | CT-05 |
 | ... | ... | ... | ... |
-| R7 | AccountService.transfer:46 | R7-自转账应抛出SELF_TRANSFER_NOT_ALLOWED | CT-03 |
+| FR-007 | AccountService.transfer:46 | FR-007-R1-自转账应抛出SELF_TRANSFER_NOT_ALLOWED | CT-03 |
 
 ## 影响分析（引用）
 - 产物路径: specs/<feature>/docs/impact-report.md
@@ -145,7 +145,7 @@ report_path: specs/<feature>/docs/test-report.md
 
 - **门禁未执行时拒绝生成报告**：`GateResult` 产物不存在或 FAIL 时
   必须拒绝并提示先运行门禁
-- **追溯矩阵必须覆盖 spec.md 全部 business_rules 规则**：每条规则一行，
+- **追溯矩阵必须覆盖 spec.md 全部 FR 段规则**：每条规则一行，
   无 @Spec 的规则也要列出（位置标注"未实现"）
 - **必须引用而非重生成 ImpactReport**：仅以路径/链接引用产物，不重新
   执行影响分析逻辑
@@ -164,6 +164,6 @@ report_path: specs/<feature>/docs/test-report.md
 
 - [ ] 门禁已执行校验通过（`GateResult` 存在且 PASS）
 - [ ] 测试结果已汇总（覆盖率 + 通过率）
-- [ ] Spec 追溯矩阵已生成（覆盖全部 business_rules 规则）
+- [ ] Spec 追溯矩阵已生成（覆盖全部 FR 段规则）
 - [ ] `ImpactReport` 产物已引用（路径呈现，未重生成）
 - [ ] 报告已按 `spec-trace-matrix` 模板组织并写入产物路径

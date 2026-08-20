@@ -2,7 +2,8 @@
  * 契约测试参考骨架（speckit.testing 提供，基于 WireMock）。占位符 {{var}} 由 AI 填充。
  *
  * 约定（MUST）：每接口 1 正向 + 每错误码 1 反向；真正调用被测接口（WireMock stub + HTTP 客户端调用
- * + 断言响应码/响应体），禁 assertTrue(true) 空断言；@DisplayName 标规则编号。技术栈见宪法 Principle III。
+ * + 断言响应码/响应体），禁 assertTrue(true) 空断言；@DisplayName 标子场景编号（FR-xxx-Rm，
+ * 与 @Spec 顶层锚按 FR 前缀对齐）。技术栈见宪法 Principle III。
  */
 package {{package}}.contract;
 

@@ -63,14 +63,17 @@ def test_tasks_template_uses_replace_strategy():
     assert tasks_entry["strategy"] == "replace"
 
 
-def test_tasks_template_enforces_required_no_optional():
+def test_tasks_template_enforces_required_backend_optional_frontend():
     f = PRESET_DIR / "templates" / "tasks-template.md"
     assert f.is_file()
     content = f.read_text(encoding="utf-8")
-    # 强制 REQUIRED
+    # 后端测试强制 REQUIRED（NON-NEGOTIABLE，v0.4.x 消灭"Tests are OPTIONAL"矛盾）
     assert "REQUIRED" in content
-    # 矛盾已消灭：不含 OPTIONAL 表述
-    assert "OPTIONAL" not in content
+    assert "NON-NEGOTIABLE" in content
+    # 前端任务区可选（v0.7 可选化）：OPTIONAL 仅允许出现在前端任务区之后
+    frontend_pos = content.index("Frontend Tasks")
+    assert "OPTIONAL" not in content[:frontend_pos]
+    assert "OPTIONAL" in content[frontend_pos:]
     # 测试任务前置（TDD）
     assert "TDD" in content or "test task" in content.lower()
     # replace 不需要 wrap 的 {CORE_TEMPLATE} 占位符

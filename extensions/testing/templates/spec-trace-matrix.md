@@ -2,7 +2,7 @@
 
 > 本模板由 speckit.testing 扩展提供（templates/spec-trace-matrix.md）。
 > 由 `speckit.testing.report` 命令生成，产出物路径 `specs/{{feature}}/docs/test-report.md`。
-> 每行一条 SpecRule（R1..Rn），引用而非重生成 ImpactReport。
+> 每行一条 SpecRule（FR-001..FR-xxx，顶层锚），引用而非重生成 ImpactReport。
 
 **能力**: {{capability}}
 **生成日期**: {{date}}
@@ -13,16 +13,16 @@
 
 ## 追溯矩阵
 
-| Spec 规则 | 描述 | 代码位置（@Spec） | 单测（@DisplayName） | 契约测试 |
+| Spec 规则（FR 顶层锚） | 描述 | 代码位置（@Spec） | 单测（@DisplayName） | 契约测试 |
 |---|---|---|---|---|
 | {{rule_id}} | {{description}} | {{code_location}} | {{unit_test_display_name}} | {{contract_test_ids}} |
-| R1 | 金额>0 | {{service_class}}.{{method_name}}:{{line}} | UT-01: R1-转账金额为0应抛出INVALID_AMOUNT | CT-02, CT-03 |
-| R2 | 转出账户存在 | {{service_class}}.{{method_name}}:{{line}} | UT-02: R2-转出账户不存在应抛出ACCOUNT_NOT_FOUND | CT-04 |
-| R3 | 转出未冻结 | {{service_class}}.{{method_name}}:{{line}} | UT-03: R3-转出账户冻结应抛出ACCOUNT_FROZEN | CT-05 |
-| R4 | 余额充足 | {{service_class}}.{{method_name}}:{{line}} | UT-04: R4-余额不足应抛出INSUFFICIENT_BALANCE | CT-06 |
-| R5 | 转入账户存在 | {{service_class}}.{{method_name}}:{{line}} | UT-05: R5-转入账户不存在应抛出ACCOUNT_NOT_FOUND | CT-07 |
-| R6 | 原子操作 | {{service_class}}.{{method_name}}:{{line}} | UT-06: R6-正常转账应原子扣减与入账 | CT-01 |
-| R7 | 禁止自转 | {{service_class}}.{{method_name}}:{{line}} | UT-07: R7-自转账应抛出SELF_TRANSFER_NOT_ALLOWED | CT-08 |
+| FR-001 | 金额>0 | {{service_class}}.{{method_name}}:{{line}} | UT-01: FR-001-R1-转账金额为0应抛出INVALID_AMOUNT | CT-02, CT-03 |
+| FR-002 | 转出账户存在 | {{service_class}}.{{method_name}}:{{line}} | UT-02: FR-002-R1-转出账户不存在应抛出ACCOUNT_NOT_FOUND | CT-04 |
+| FR-003 | 转出未冻结 | {{service_class}}.{{method_name}}:{{line}} | UT-03: FR-003-R1-转出账户冻结应抛出ACCOUNT_FROZEN | CT-05 |
+| FR-004 | 余额充足 | {{service_class}}.{{method_name}}:{{line}} | UT-04: FR-004-R1-余额不足应抛出INSUFFICIENT_BALANCE | CT-06 |
+| FR-005 | 转入账户存在 | {{service_class}}.{{method_name}}:{{line}} | UT-05: FR-005-R1-转入账户不存在应抛出ACCOUNT_NOT_FOUND | CT-07 |
+| FR-006 | 原子操作 | {{service_class}}.{{method_name}}:{{line}} | UT-06: FR-006-R1-正常转账应原子扣减与入账 | CT-01 |
+| FR-007 | 禁止自转 | {{service_class}}.{{method_name}}:{{line}} | UT-07: FR-007-R1-自转账应抛出SELF_TRANSFER_NOT_ALLOWED | CT-08 |
 
 ---
 
@@ -59,7 +59,7 @@
 
 ## 契约不变量自检
 
-- [ ] 追溯矩阵覆盖 spec.md 全部 business_rules 规则
+- [ ] 追溯矩阵覆盖 spec.md 全部 FR 段规则（顶层锚 FR-xxx）
 - [ ] 每行代码位置（@Spec）与扫描脚本输出一致
-- [ ] 每行单测 @DisplayName 与 @Spec 规则编号双向对齐
+- [ ] 每行单测 @DisplayName（FR-xxx-Rm）与 @Spec 顶层锚（FR-xxx）按 FR 前缀双向对齐
 - [ ] 引用而非重生成 ImpactReport
