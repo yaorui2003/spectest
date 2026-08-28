@@ -50,15 +50,20 @@
 
 > 每条 SpecRule 至少 3 条单测（B/C/E 必含，D 视设计文档可用性）。规则标注
 > 双通道：JUnit5 `@DisplayName("FR-xxx-Rm-<描述>")` / JUnit4 测试方法级
-> `@Spec(rule="FR-xxx", description="<场景>")`（@Spec 锚永远只写顶层 FR-xxx）。
+> `@Spec(rule="FR-xxx-Rm", description="<场景>")`（rule = 顶层锚 + 子编号，
+> 与代码侧 @Spec 顶层锚 FR-xxx 对齐；代码侧 @Spec 永远只写顶层锚）。
 
 | 用例 ID | 规则 | 规则标注 | 场景 | 被测方法 |
 |---------|------|----------|------|----------|
-| {{unit_case}} | {{rule_id}} | {{rule_id}}-{{description}} | {{unit_scenario}} | {{method_name}} |
+| {{unit_case}} | {{rule_id}} | {{rule_annotation}} | {{unit_scenario}} | {{method_name}} |
 | UT-01 | FR-001 | FR-001-R1-转账金额为0应抛出INVALID_AMOUNT | 异常 | AccountService.transfer |
 | UT-02 | FR-002 | FR-002-R1-转出账户不存在应抛出ACCOUNT_NOT_FOUND | 异常 | AccountService.transfer |
 | UT-03 | FR-001 | FR-001-R2-正常转账应原子扣减与入账 | 正常 | AccountService.transfer |
 | UT-04 | FR-001 | FR-001-R3-转账金额为下限0.01应成功 | 边界 | AccountService.transfer |
+
+> 「规则标注」列填法：JUnit5 项目填 `FR-xxx-Rm-<描述>`（@DisplayName 内容）；
+> JUnit4 项目填 `@Spec(rule="FR-xxx-Rm", description="<场景>")`（子编号与
+> JUnit5 通道一致，同 FR 内从 1 连续）。
 
 **单测总数**: {{unit_test_count}}
 
@@ -83,4 +88,4 @@
 - [ ] 验收阈值与 `ImpactReport.risk_level` 匹配（高->90%/100%，中->80%，
       低->70%）
 - [ ] 单测规则标注格式为 `FR-xxx-Rm-<描述>`（JUnit5 @DisplayName）或测试
-      方法级 `@Spec(rule="FR-xxx")`（JUnit4），与代码侧 @Spec 顶层锚对齐
+       方法级 `@Spec(rule="FR-xxx-Rm")`（JUnit4），与代码侧 @Spec 顶层锚对齐

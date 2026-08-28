@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """spec.md 格式验证脚本（Python 版）。
 
-验证 spec.md 是否包含必需的 ``## Business Rules`` 章节（带 R\\d+ 规则编号），
-并可选检查 ``### Error Code Definitions`` 章节（缺失仅警告，不影响 valid）。
+验证 spec.md 包含必需的规则权威源段（优先 ``### Functional Requirements``
+FR-001..FR-xxx 顶层锚，缺失时回落 ``## Business Rules`` R\\d+，两者皆无 ->
+error），并可选检查 ``### Error Code Definitions`` 章节（缺失仅警告，
+不影响 valid）与测试标注子编号连续性（--test-source，WARN 不 FAIL）。
 
 用法::
 
     python validate_spec_format.py --spec <spec.md> --json
-
-三语言（py/sh/ps）等价：本脚本定义输出格式（``json.dumps`` +
-``ensure_ascii=False`` + ``indent=2``），bash/PowerShell 版本输出字节级等价。
+    python validate_spec_format.py --spec <spec.md> --test-source <test_dir> --json
 """
 
 from __future__ import annotations
@@ -29,8 +29,12 @@ BUSINESS_RULES_HEADER_RE = re.compile(r"^#{1,6}\s+.*business[\s_-]+rules", re.IG
 # 章节内行首规则编号：- FR-001: / - **FR-001** / - R1: / - **R1** / R1: ...
 RULE_LINE_RE = re.compile(r"^\s*[-*]?\s*\**?(FR-\d+|R\d+)\b")
 
-# @DisplayName 子编号正则（可选 --test-source 校验）：@DisplayName("FR-001-R1-...")
+# 测试规则标注子编号正则（可选 --test-source 校验，6.2 双通道）：
+# JUnit5 @DisplayName("FR-001-R1-...")；JUnit4 测试方法级 @Spec(rule="FR-001-R1", ...)
 DISPLAYNAME_SUB_RE = re.compile(r'@DisplayName\s*\(\s*"FR-(\d+)-R(\d+)-')
+SPEC_SUB_RE = re.compile(
+    r'@Spec\s*\(\s*capability\s*=\s*"[^"]*"\s*,\s*rule\s*=\s*"FR-(\d+)-R(\d+)"'
+)
 
 # ### Error Code Definitions 章节标题
 ERROR_CODE_HEADER_RE = re.compile(r"^#{1,6}\s+Error Code Definitions", re.IGNORECASE)
@@ -86,11 +90,12 @@ def _extract_rules(text: str) -> tuple[str, list[str]]:
     return "none", []
 
 
-def _collect_displayname_subscenes(test_source: str) -> list[tuple[int, int]]:
-    """扫描测试源码，收集 @DisplayName("FR-xxx-Rm-...") 的 (FR 序号, R 序号)。
+def _collect_test_subscenes(test_source: str) -> list[tuple[int, int]]:
+    """扫描测试源码，收集 FR-xxx-Rm 子编号对 ``(FR 序号, R 序号)``。
 
-    仅当 rule_source == fr-section 且提供 --test-source 时启用；老 R 体系
-    DisplayName 无子编号，不适用（返回空）。
+    双通道（v1.5.1）：JUnit5 ``@DisplayName("FR-xxx-Rm-...")`` 与 JUnit4 测试
+    方法级 ``@Spec(rule="FR-xxx-Rm", ...)``。仅当 rule_source == fr-section 且
+    提供 --test-source 时启用；老 R 体系无子编号，不适用（返回空）。
     """
     src = Path(test_source)
     if not src.is_dir():
@@ -102,6 +107,8 @@ def _collect_displayname_subscenes(test_source: str) -> list[tuple[int, int]]:
         except OSError:
             continue
         for m in DISPLAYNAME_SUB_RE.finditer(text):
+            pairs.append((int(m.group(1)), int(m.group(2))))
+        for m in SPEC_SUB_RE.finditer(text):
             pairs.append((int(m.group(1)), int(m.group(2))))
     return pairs
 
@@ -171,8 +178,8 @@ def _build_result(
 
     v0.66（v0.63 六章 6.2）：规则源 = FR 段优先 / Business Rules 段回落 / 两者
     皆无 -> error；FR 顶层锚全局连续（FR-001, FR-002, ...），Business Rules 段
-    R 全局连续；可选校验 @DisplayName 子编号 FR-xxx-Rm 在同 FR 内从 1 连续
-    （WARN 不 FAIL）。
+    R 全局连续；可选校验测试规则标注子编号 FR-xxx-Rm 在同 FR 内从 1 连续
+    （双通道：JUnit5 @DisplayName / JUnit4 测试方法级 @Spec；WARN 不 FAIL）。
     """
     errors: list[str] = []
     warnings: list[str] = []
@@ -195,7 +202,7 @@ def _build_result(
                     errors.append(f"Rule numbering gap: missing {label}")
     if not err_section:
         warnings.append("No '### Error Code Definitions' section found (optional, skipped)")
-    # @DisplayName 子编号 F-xxx-Rm 同 FR 内从 1 连续（WARN，不 FAIL，6.2）
+    # 测试规则标注子编号 FR-xxx-Rm 同 FR 内从 1 连续（双通道，WARN 不 FAIL，6.2）
     if displayname_sub_pairs:
         by_fr: dict[int, set[int]] = {}
         for fr_no, r_no in displayname_sub_pairs:
@@ -206,7 +213,7 @@ def _build_result(
             for n in range(1, mx + 1):
                 if n not in subs:
                     warnings.append(
-                        f"DisplayName 子编号断裂: FR-{fr_no:03d} 缺 R{n}"
+                        f"测试标注子编号断裂: FR-{fr_no:03d} 缺 R{n}"
                     )
     return {
         "valid": len(errors) == 0,
@@ -221,13 +228,14 @@ def _build_result(
 def validate_spec(spec_path: Path, test_source: str = "") -> dict:
     """验证 spec.md，返回扫描契约 JSON 对象。
 
-    ``test_source`` 可选：提供时额外校验 @DisplayName 子编号连续性（6.2）。
+    ``test_source`` 可选：提供时额外校验测试规则标注子编号连续性
+    （6.2，双通道：JUnit5 @DisplayName / JUnit4 测试方法级 @Spec）。
     """
     text = spec_path.read_text(encoding="utf-8")
     rule_source, rules = _extract_rules(text)
     err_section, codes = _extract_error_codes(text)
-    displayname_pairs = _collect_displayname_subscenes(test_source) if test_source else []
-    return _build_result(rule_source, rules, err_section, codes, displayname_pairs)
+    test_sub_pairs = _collect_test_subscenes(test_source) if test_source else []
+    return _build_result(rule_source, rules, err_section, codes, test_sub_pairs)
 
 
 def main() -> int:
@@ -236,8 +244,9 @@ def main() -> int:
     parser.add_argument(
         "--test-source",
         default="",
-        help="测试源码根目录（可选，v0.66 6.2）：存在时校验 @DisplayName 子编号"
-             " FR-xxx-Rm 在同 FR 内从 1 连续（WARN，不 FAIL）",
+        help="测试源码根目录（可选，v0.66 6.2）：存在时校验测试规则标注子编号"
+             " FR-xxx-Rm 在同 FR 内从 1 连续（双通道：JUnit5 @DisplayName / "
+             "JUnit4 测试方法级 @Spec；WARN，不 FAIL）",
     )
     parser.add_argument("--json", action="store_true", help="输出 JSON 到 stdout")
     args = parser.parse_args()

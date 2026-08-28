@@ -128,9 +128,9 @@
 **规则标注双通道**（与 JUnit 版本无关）：
 
 - **JUnit5**：`@DisplayName("FR-001-R1-<场景>")`（顶层锚 + 子编号）
-- **JUnit4**：测试方法上标 `@Spec(rule="FR-001", description="<场景>")`
-  （@Spec 为 spec-kit 自定义注解，SOURCE 保留，门禁静态正则扫描，不依赖
-  JUnit 机制，JUnit4 项目同样可用）
+- **JUnit4**：测试方法上标 `@Spec(rule="FR-001-R1", description="<场景>")`
+  （rule = 顶层锚 + 子编号，与 JUnit5 对齐；@Spec 为 spec-kit 自定义注解，
+  SOURCE 保留，门禁静态正则扫描，不依赖 JUnit 机制，JUnit4 项目同样可用）
 
 | 校验方向 | 断裂表现 | 判定 |
 |---|---|---|

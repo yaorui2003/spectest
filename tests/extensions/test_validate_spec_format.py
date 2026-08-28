@@ -293,3 +293,49 @@ def test_displayname_subscene_numbering_gap_warns(tmp_path: Path):
     # 子编号断裂只 WARN，不影响 valid
     assert data["valid"] is True
     assert any("FR-001" in w and "R2" in w for w in data["warnings"]), data["warnings"]
+
+
+def test_spec_subscene_numbering_gap_warns_junit4(tmp_path: Path):
+    """v0.66 6.2 JUnit4 通道: 测试方法级 @Spec(rule="FR-001-R1"/"FR-001-R3")
+    缺 R2 -> WARN 不 FAIL（rule = 顶层锚 + 子编号，双通道对称）。"""
+    spec = _write_spec(tmp_path, """\
+# Feature
+
+### Functional Requirements
+
+- **FR-001**: validate amount
+""")
+    test_dir = tmp_path / "test-src"
+    test_dir.mkdir()
+    (test_dir / "AccountServiceTest.java").write_text(
+        "@Spec(capability = \"transfer\", rule = \"FR-001-R1\", description = \"x\")\n"
+        "@Spec(capability = \"transfer\", rule = \"FR-001-R3\", description = \"x\")\n",
+        encoding="utf-8",
+    )
+
+    data = _run_py_with_test_source(spec, test_dir)
+    assert data["valid"] is True
+    assert any("FR-001" in w and "R2" in w for w in data["warnings"]), data["warnings"]
+
+
+def test_subscene_continuous_across_dual_channel(tmp_path: Path):
+    """v0.66 6.2 双通道混合: @DisplayName FR-001-R1 与 @Spec(rule=FR-001-R2)
+    互补连续 -> 无子编号断裂告警。"""
+    spec = _write_spec(tmp_path, """\
+# Feature
+
+### Functional Requirements
+
+- **FR-001**: validate amount
+""")
+    test_dir = tmp_path / "test-src"
+    test_dir.mkdir()
+    (test_dir / "AccountServiceTest.java").write_text(
+        "@DisplayName(\"FR-001-R1-amount zero\")\n"
+        "@Spec(capability = \"transfer\", rule = \"FR-001-R2\", description = \"ok\")\n",
+        encoding="utf-8",
+    )
+
+    data = _run_py_with_test_source(spec, test_dir)
+    assert data["valid"] is True
+    assert not any("子编号断裂" in w for w in data["warnings"]), data["warnings"]

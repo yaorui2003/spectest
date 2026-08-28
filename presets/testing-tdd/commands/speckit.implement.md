@@ -39,8 +39,9 @@ public Result someMethod(...) { ... }
 ### 3. 测试侧对齐（MUST，规则标注双通道）
 
 - **JUnit5**：单测 `@DisplayName("FR-001-R1-<场景>")` 标注子场景编号
-- **JUnit4**：测试方法上标 `@Spec(rule="FR-001", description="<场景>")`
-  （@Spec 为 spec-kit 自定义注解，与 JUnit 版本无关，JUnit4 项目同样可用）
+- **JUnit4**：测试方法上标 `@Spec(rule="FR-001-R1", description="<场景>")`
+  （rule = 顶层锚 + 子编号，与 JUnit5 @DisplayName 对齐；@Spec 为 spec-kit
+  自定义注解，与 JUnit 版本无关，JUnit4 项目同样可用）
 - 与代码侧 `@Spec(rule="FR-001")` 按顶层锚双向对齐（无 plan 时测试作者自编号）
 - **直接测试覆盖**：每条业务规则（spec.md FR 段行）MUST 有至少 1 个**直接
   单测**——测试类直接实例化/驱动实现该规则的主类；禁止仅以编排类间接覆盖

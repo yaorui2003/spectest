@@ -88,7 +88,7 @@ run_gate --source <java_dir> --test-source <test_dir> --spec <spec.md> \
 | 2 | `scan_test_stack`（禁 PowerMock / @SpringBootTest / @Autowired） | 检出 -> FAIL |
 | 3 | `parse_test_results`（聚合 coverage + 行级 source_lines） | 报告缺失 -> FAIL（不降级） |
 | 4 | `scan_spec_annotations`（规则源：spec.md `### Functional Requirements` 段 FR-001 优先 / Business Rules 段兼容回落） | `unimplemented_rules` / `orphan_annotations` 非空 -> FAIL |
-| 5 | 测试规则对齐（**双通道**：JUnit5 `@DisplayName("FR-xxx-Rm-...")` / JUnit4 测试方法级 `@Spec(rule="FR-xxx")`，与代码侧 @Spec 按顶层锚对齐）+ **5.5 关键路径对抗校验**（JUnit5 `@DisplayName("FR-xxx-Rm-对抗-..."，老项目 "Rn-对抗-...")` / JUnit4 `@Spec(..., description="对抗-...")`） | 不对齐（require_displayname_match）或 `critical_path_required=true` 且 high 风险规则 0 个对抗用例 -> FAIL |
+| 5 | 测试规则对齐（**双通道**：JUnit5 `@DisplayName("FR-xxx-Rm-...")` / JUnit4 测试方法级 `@Spec(rule="FR-xxx-Rm")`，与代码侧 @Spec 按顶层锚对齐）+ **5.5 关键路径对抗校验**（JUnit5 `@DisplayName("FR-xxx-Rm-对抗-..."，老项目 "Rn-对抗-...")` / JUnit4 `@Spec(..., description="对抗-...")`） | 不对齐（require_displayname_match）或 `critical_path_required=true` 且 high 风险规则 0 个对抗用例 -> FAIL |
 | 6 | 按 `risk_level` 套阈值：high/medium/low 行覆盖 **90/80/70**% 等档（config `risk_overrides` 可覆盖） | 档内指标不达标 -> FAIL |
 | 7 | diff coverage 判定（变更行覆盖率；无 git 回退全量聚合阈值） | 不达标 -> FAIL |
 | 8 | 写 `specs/<feature>/docs/gate-result.md` + stdout 判定 JSON；只读检查 SOFT 标题缺失 -> WARN + `soft_missing: true`（不 FAIL） | AI 仅读，不能改判 |

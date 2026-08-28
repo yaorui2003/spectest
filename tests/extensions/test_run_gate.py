@@ -1519,8 +1519,9 @@ def _make_fr_junit4_test_java(rules: list[str]) -> str:
 
 
 def test_run_full_mode_junit4_spec_channel(fr_gate_fixture):
-    """v1.5 JUnit4 双通道：测试方法级 @Spec(rule="FR-xxx") 视为对齐信号
-    （@Spec 为自定义注解与 JUnit 版本无关），7 条全部对齐 -> PASS。"""
+    """v1.5 JUnit4 双通道：测试方法级 @Spec(rule="FR-xxx") 纯顶层锚写法仍兼容
+    （v1.5.1 起官方写法 rule 带子编号 FR-xxx-Rm，见
+    test_run_full_mode_junit4_spec_subnumber_alignment），7 条全部对齐 -> PASS。"""
     _make_full_mode_reports(fr_gate_fixture)
     # 替换测试源码为 JUnit4 通道版本（无 @DisplayName）
     (fr_gate_fixture["test_src"] / "AccountServiceTest.java").write_text(
@@ -1579,3 +1580,48 @@ def test_run_full_mode_junit4_spec_orphan_fail(fr_gate_fixture):
     assert result["status"] == "FAIL"
     assert result["displayname_match"]["mismatch_count"] == 1
     assert any("displayname_mismatch" in r for r in result["fail_reasons"])
+
+
+def test_run_full_mode_junit4_spec_subnumber_alignment(fr_gate_fixture):
+    """v1.5.1 JUnit4 双通道带子编号：测试方法级 @Spec(rule="FR-001-R1")
+    （rule = 顶层锚 + 子编号，与 JUnit5 @DisplayName 对齐）剥离子编号后按
+    顶层锚对齐 -> PASS；对抗识别同样支持子编号写法。"""
+    _make_full_mode_reports(fr_gate_fixture)
+    test_java = (
+        "package com.example;\n"
+        "import org.junit.Test;\n"
+        "import com.speckit.testing.Spec;\n"
+        "public class AccountServiceTest {\n"
+    )
+    for n, rule in enumerate(FR_RULES, start=1):
+        test_java += (
+            "    @Test\n"
+            f'    @Spec(capability = "transfer", rule = "{rule}-R{n}", description = "{FR_TO_DESC[rule]}")\n'
+            f"    public void test{rule}() {{}}\n"
+        )
+    test_java += "}\n"
+    (fr_gate_fixture["test_src"] / "AccountServiceTest.java").write_text(
+        test_java, encoding="utf-8"
+    )
+    (fr_gate_fixture["test_src"] / "AdversarialTest.java").write_text(
+        "package com.example;\n"
+        "import org.junit.Test;\n"
+        "import com.speckit.testing.Spec;\n"
+        "public class AdversarialTest {\n"
+        "    @Test\n"
+        '    @Spec(capability = "transfer", rule = "FR-001-R1", description = "对抗-边界")\n'
+        "    public void testFR001Adversarial() {}\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    rg = _load_run_gate_module()
+    result = rg.run(_full_mode_inputs(fr_gate_fixture))
+
+    assert result["status"] == "PASS", result["fail_reasons"]
+    dm = result["displayname_match"]
+    assert dm["aligned"] == 8 and dm["total"] == 8, dm
+    assert dm["mismatch_count"] == 0
+    assert dm["untested_spec_rules"] == []
+    adv = result["adversarial_coverage"]
+    assert adv["adversarial_counts"].get("FR-001") == 1
+    assert adv["missing"] == []

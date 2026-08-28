@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """@Spec 注解扫描脚本（Python 版）。
 
-解析 ``.java`` 源文件提取 ``@Spec`` 注解，并解析 ``spec.md`` 的
-``business_rules`` 规则编号，输出 JSON 供 ``speckit.testing.gate`` 命令消费。
+解析 ``.java`` 源文件提取 ``@Spec`` 注解，并解析 ``spec.md`` 的规则权威源段
+（优先 ``### Functional Requirements`` FR-001 顶层锚，缺失时回落
+``## Business Rules`` R\\d+），输出 JSON 供 ``speckit.testing.gate`` 命令消费。
 
 v0.6（9.6 节）新增 **UNSPEC_CODE 漂移检测**（T1 结构性 MEDIUM 告警，不阻断
 PASS/FAIL 判定）：比对"生产类清单 vs @Spec 标注"，对（非排除、未标注 @Spec、
@@ -17,11 +18,9 @@ PASS/FAIL 判定）：比对"生产类清单 vs @Spec 标注"，对（非排除�
         --test-source <test_dir> --config <testing-config.yml> --json
         # --config 读 scan.unspec_exclude_patterns；--exclude-patterns 优先
 
-输出 JSON schema 见
-``specs/001-speckit-testing-ext/contracts/spec-annotation.md`` 的"扫描契约"段。
-
-三语言（py/sh/ps）等价：本脚本定义输出格式（``json.dumps`` +
-``ensure_ascii=False`` + ``indent=2``），bash/PowerShell 版本输出字节级等价。
+输出 JSON 的字段语义见 ``tests/extensions/test_scan_spec_annotations.py``
+与 run_gate 的消费端（rule_source / spec_rules / annotated_rules /
+unimplemented_rules / orphan_annotations / unspec_codes）。
 """
 
 from __future__ import annotations
@@ -35,7 +34,8 @@ from pathlib import Path
 # @Spec 注解正则：@Spec(capability="...", rule="FR-001", description="...")
 # description 可选；字段间允许任意空白；rule 支持顶层锚 FR-\d+（新体系，默认）
 # 与纯 R\d+（老项目 Business Rules 回落）；子编号 -R\d+ 被剥离、永不进入比对
-# （@Spec 永远只写顶层锚）。
+# （代码侧 @Spec 永远只写顶层锚；测试侧 JUnit4 @Spec 的 rule 可带子编号，
+# 同样剥离）。
 SPEC_ANNOTATION_RE = re.compile(
     r'@Spec\s*\(\s*capability\s*=\s*"([^"]+)"\s*,\s*rule\s*=\s*'
     r'"(?:(FR-\d+)|(R\d+))(?:-R\d+)?"'

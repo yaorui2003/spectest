@@ -54,7 +54,7 @@ provides:
       runtimes: [python]
     - name: validate-spec-format
       file: scripts/python/validate_spec_format.py
-      description: "spec.md 格式验证脚本（Business Rules 段 + 规则编号连续性）"
+      description: "spec.md 格式验证脚本（Functional Requirements 段 FR-001 优先 / Business Rules 回落 + 规则编号连续性 + 测试标注子编号连续性）"
       runtimes: [python]
     - name: parse-test-results
       file: scripts/python/parse_test_results.py

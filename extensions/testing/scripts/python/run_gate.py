@@ -17,7 +17,8 @@ AI 仅读 stdout 判定 JSON，**不能改判、不能补写 gate-result.md、�
 4. 调 ``scan_spec_annotations``（unimplemented_rules/orphan_annotations 非空 -> FAIL；
    读取其 ``unspec_codes`` 漂移告警，MEDIUM 不阻断）
 5. 内联解析 test 源码算对齐数（**双通道**）：JUnit5 ``@DisplayName("FR-xxx-Rm-...")``
-   或测试方法级 ``@Spec(rule="FR-xxx")``（JUnit4 通道，@Spec 与 JUnit 版本无关）
+   或测试方法级 ``@Spec(rule="FR-xxx-Rm")``（JUnit4 通道，rule = 顶层锚 + 子编号，
+   剥离子编号后按顶层锚对齐；@Spec 与 JUnit 版本无关）
 5.5. 关键路径对抗校验（v0.5 新增）：读 impact-report 逐规则 risk + 检测对抗标注
     （`@DisplayName("FR-xxx-Rm-对抗-...")` 或 `@Spec(..., description="对抗-...")`）；
     ``critical_path_required=true`` 且 high 风险规则 0 对抗用例 -> FAIL
@@ -71,8 +72,8 @@ DISPLAYNAME_RE = re.compile(
 )
 
 # JUnit4 通道（v1.5）：测试方法级 @Spec 注解作为对齐信号（@Spec 为 spec-kit
-# 自定义注解，与 JUnit 版本无关）。rule 取顶层锚 FR-xxx / 老项目 R\d+；
-# 子编号 -R\d+ 被剥离，永不进入比对。
+# 自定义注解，与 JUnit 版本无关）。rule 与代码侧同构：FR 顶层锚 + 可选子编号
+# FR-xxx-Rm（v1.5.1 双通道对齐）或老项目 R\d+；子编号 -R\d+ 被剥离，永不进入比对。
 TEST_SPEC_RE = re.compile(
     r'@Spec\s*\(\s*capability\s*=\s*"[^"]*"\s*,\s*rule\s*=\s*"(?:(FR-\d+)|(R\d+))(?:-R\d+)?"'
     r'(?:\s*,\s*description\s*=\s*"[^"]*")?\s*\)'
@@ -347,7 +348,7 @@ def _count_adversarial_tests(test_source: str) -> dict[str, int]:
     """扫描测试源码，统计每规则的对抗用例数。
 
     双通道（v1.5）：``@DisplayName("FR-xxx-Rm-对抗-...")``（JUnit5）或测试方法级
-    ``@Spec(rule="FR-xxx", description="对抗-...")``（JUnit4）。归一为顶层锚计数。
+    ``@Spec(rule="FR-xxx-Rm", description="对抗-...")``（JUnit4）。归一为顶层锚计数。
     """
     counts: dict[str, int] = {}
     src = Path(test_source)
@@ -494,8 +495,8 @@ def _parse_displayname_match(test_source: str, spec_coverage: dict) -> dict:
 
     双通道（v1.5）：
     - JUnit5：``@DisplayName("FR-xxx-Rm-...")``（顶层锚 FR 前缀分组）
-    - JUnit4：测试方法级 ``@Spec(rule="FR-xxx")``（@Spec 为 spec-kit 自定义注解，
-      与 JUnit 版本无关；子编号 -R 被剥离）
+    - JUnit4：测试方法级 ``@Spec(rule="FR-xxx-Rm")``（@Spec 为 spec-kit 自定义注解，
+      与 JUnit 版本无关；子编号 -R 被剥离，按顶层锚对齐）
 
     正向（测试->@Spec）：total = 带规则编号的标注条数；aligned = 其中规则已
     出现在 @Spec annotated_rules 的条数；mismatch_count = total - aligned。
@@ -810,7 +811,7 @@ def run(inputs: dict) -> dict:
         fail_reasons.append(
             f"critical_path_adversarial: high 风险规则 {missing_adversarial}"
             ' 无对抗用例（@DisplayName("FR-xxx-Rm-对抗-..."，JUnit4 用测试方法级'
-            ' @Spec(rule="FR-xxx", description="对抗-...")）'
+            ' @Spec(rule="FR-xxx-Rm", description="对抗-...")）'
             " -> 补对抗用例 或设 critical_path_required: false 降级"
         )
 

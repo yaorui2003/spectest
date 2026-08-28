@@ -14,7 +14,7 @@
 - 每条 spec.md `### Functional Requirements` 段的规则（FR-001）MUST 至少有一个 @Spec 注解对应
 - 实现该规则的每个 public 方法 MUST 携带至少一个 @Spec 注解
 - @Spec 的 rule 编号 MUST 严格匹配 spec.md 原生 FR 段顶层锚（如 FR-001、FR-002），永不携带 -R 子编号
-- 单测 MUST 标注规则编号与 @Spec 顶层锚双向对齐（JUnit5：`@DisplayName("FR-001-R1-<场景>")`；JUnit4：测试方法级 `@Spec(rule="FR-001")`）
+- 单测 MUST 标注规则编号与 @Spec 顶层锚双向对齐（JUnit5：`@DisplayName("FR-001-R1-<场景>")`；JUnit4：测试方法级 `@Spec(rule="FR-001-R1", description="<场景>")`，rule = 顶层锚 + 子编号）
 - contracts/ 中的接口契约 MUST 列出该接口实现的规则编号清单
 
 rationale: 门禁通过扫描 @Spec 注解自动校验"Spec 能力点 -> 代码实现"覆盖完整性，

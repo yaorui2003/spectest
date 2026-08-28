@@ -9,7 +9,8 @@ import java.lang.annotation.Target;
 /**
  * Spec 注解：标注代码实现的 Spec 业务规则。
  *
- * <p>语义见 {@code specs/001-speckit-testing-ext/contracts/spec-annotation.md}：
+ * <p>本注解供 testing 扩展的源码静态扫描（scan_spec_annotations）使用，
+ * 语义约定如下：
  *
  * <ul>
  *   <li>{@code capability}：对应 spec.md 的 capability 名，非空。
@@ -29,8 +30,9 @@ import java.lang.annotation.Target;
  * <pre>{@code
  * @Spec(capability = "transfer", rule = "FR-001", description = "金额校验")
  * public TransferResult transfer(String from, String to, BigDecimal amount) {
- *     // @Spec 永远只写顶层锚 FR-xxx；测试侧子场景编号由
- *     // @DisplayName（JUnit5）或测试方法级 @Spec（JUnit4）标注
+ *     // 代码侧 @Spec 永远只写顶层锚 FR-xxx；测试侧子场景编号由
+ *     // @DisplayName("FR-xxx-Rm-...")（JUnit5）或测试方法级
+ *     // @Spec(rule="FR-xxx-Rm", ...)（JUnit4）标注
  * }
  * }</pre>
  */

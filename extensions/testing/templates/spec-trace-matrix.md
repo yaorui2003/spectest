@@ -20,7 +20,7 @@
 | FR-002 | 转出账户存在 | {{service_class}}.{{method_name}}:{{line}} | FR-002-R1-转出账户不存在应抛出ACCOUNT_NOT_FOUND |
 
 > 单测规则标注 = JUnit5 `@DisplayName("FR-xxx-Rm-...")` 或 JUnit4 测试方法级
-> `@Spec(rule="FR-xxx")`。
+> `@Spec(rule="FR-xxx-Rm")`。
 
 ---
 
@@ -57,6 +57,6 @@
 
 - [ ] 追溯矩阵覆盖 spec.md 全部 FR 段规则（顶层锚 FR-xxx）
 - [ ] 每行代码位置（@Spec）与扫描脚本输出一致
-- [ ] 每行单测规则标注（@DisplayName FR-xxx-Rm 或测试方法级 @Spec）与 @Spec
+- [ ] 每行单测规则标注（@DisplayName FR-xxx-Rm 或测试方法级 @Spec rule=FR-xxx-Rm）与 @Spec
       顶层锚（FR-xxx）按 FR 前缀双向对齐
 - [ ] 引用而非重生成 ImpactReport

@@ -58,15 +58,17 @@ contracts/ / data-model.md），生成**单测用例清单**（标注规则编�
 
 #### 2.1 用例维度（BCDE 四原则，至少 3 条测试用例）
 
-每条规则按 **BCDE 四字母**显式命名用例维度（部门规范）：
+每条用例按 **BCDE 四字母**显式标注用例维度（部门规范，记入用例"场景"列）：
 
-- **B = 边界（boundary）**：`UT-<规则>-boundary`（参考 `data-model.md` 字段
-  约束：最小值 / 最大值 / 空值 / 越界 / 临界等值）
-- **C = 正常（correct）**：`UT-<规则>-correct`（合法输入，验证成功语义与副作用）
-- **D = 结合设计文档（design）**：`UT-<规则>-design`（结合 `plan.md` /
-  `research.md` 设计决策的用例，如特定算法分支、并发/时序约束；设计文档
-  不可用时跳过）
-- **E = 异常/错误（error）**：`UT-<规则>-error`（每个错误码一条，验证抛出与错误码）
+- **B = 边界（boundary）**：参考 `data-model.md` 字段约束：最小值 / 最大值 /
+  空值 / 越界 / 临界等值
+- **C = 正常（correct）**：合法输入，验证成功语义与副作用
+- **D = 结合设计文档（design）**：结合 `plan.md` / `research.md` 设计决策的
+  用例，如特定算法分支、并发/时序约束；设计文档不可用时跳过
+- **E = 异常/错误（error）**：每个错误码一条，验证抛出与错误码
+
+用例 ID 统一 **`UT-<序号>`**（按模板样例 UT-01、UT-02… 顺序分配），维度记入
+"场景"列（边界/正常/设计/异常），规则编号记入"规则"列。
 
 每条规则至少 3 条（**B/C/E 必含**，D 视设计文档可用性）。
 
@@ -75,9 +77,9 @@ contracts/ / data-model.md），生成**单测用例清单**（标注规则编�
 1. **规则标注（双通道，与 JUnit 版本无关）**：
    - JUnit5：`@DisplayName("FR-xxx-Rm-<具体场景描述>")`（顶层锚 + 子编号），
      描述须含期望结果，如 `FR-001-R1-转账金额为0应抛出INVALID_AMOUNT`
-   - JUnit4：测试方法上标 `@Spec(rule="FR-xxx", description="<场景描述>")`
-     （@Spec 为 spec-kit 自定义注解，与 JUnit 版本无关；子编号可并入
-     description 或省略）
+   - JUnit4：测试方法上标 `@Spec(rule="FR-xxx-Rm", description="<具体场景描述>")`
+     （rule = 顶层锚 + 子编号，与 JUnit5 @DisplayName 完全对齐；@Spec 为
+     spec-kit 自定义注解，与 JUnit 版本无关；描述须含期望结果）
 2. **断言业务语义**：错误码匹配 / 状态变更 / 副作用验证（`verify` 调用）；
    **禁止仅用 `assertNotNull` / `assertTrue` 等弱断言**。每个测试方法至少
    一个业务语义断言。禁止 System.out/打印输出人肉验证。
@@ -95,7 +97,7 @@ contracts/ / data-model.md），生成**单测用例清单**（标注规则编�
 7. **边界值依据 `data-model.md`**：字段约束驱动的边界（如金额 > 0 的边界：
    0 / 最小单位 / 最大值），不要凭空造边界。
 8. **命名 `UT-<序号>`**，每条标注规则编号（顶层锚 FR-xxx），与代码侧
-   `@Spec(rule="FR-xxx")` 双向对齐。
+   `@Spec(rule="FR-xxx")` 顶层锚双向对齐。
 9. **独立性（AIR-I）**：禁止 test A 调用 test B、禁止共享可变状态/依赖执行
    次序——每个用例独立可运行。
 10. **命名规范**：测试类 = 被测类 + `Test`；测试方法 = `testXxx_状态`；包名
@@ -142,8 +144,8 @@ test_plan_path: specs/<feature>/docs/test-plan.md
 - 每条 `SpecRule` 至少 3 条单测（B / C / E 必含，D 视设计文档可用性），
   满足 2.2 质量要求
 - 单测规则标注格式 `FR-xxx-Rm-<描述>`（JUnit5 @DisplayName）或测试方法级
-  `@Spec(rule="FR-xxx")`（JUnit4），与代码侧 `@Spec(rule="FR-xxx")` 按顶层锚
-  双向对齐（@Spec 永远只写顶层锚）
+  `@Spec(rule="FR-xxx-Rm", description="<场景>")`（JUnit4），与代码侧
+  `@Spec(rule="FR-xxx")` 按顶层锚双向对齐（代码侧 @Spec 永远只写顶层锚）
 - 阈值：`ImpactReport` 存在则风险档，否则 default 档
 - `TestPlan` 产物路径必须可被后续 `speckit.tasks` 读取（默认写入
   `specs/<feature>/docs/test-plan.md`）

@@ -109,7 +109,7 @@ Examples of foundational tasks (adjust based on your project):
 
 > **MANDATORY: Write these tests FIRST, ensure they FAIL (Red) before ANY implementation task (Green).** Do not skip this subsection.
 > 测试任务数量与内容以 test-plan.md 用例清单为准（存在时）：单测按 UT-xx（每规则至少 3 条：正常/异常/边界）；下方为样板，生成时按实际用例展开。
-> 规则标注双通道：JUnit5 `@DisplayName("FR-xxx-Rm-<描述>")`；JUnit4 测试方法级 `@Spec(rule="FR-xxx")`。
+> 规则标注双通道：JUnit5 `@DisplayName("FR-xxx-Rm-<描述>")`；JUnit4 测试方法级 `@Spec(rule="FR-xxx-Rm", description="<场景>")`。
 
 > **Red evidence -- ALL 3 MUST hold（Red 判定三条件，命令级硬规则）**：
 > ① `mvn test-compile` EXIT=0（骨架接口与测试签名一致）；
