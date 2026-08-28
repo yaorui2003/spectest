@@ -2,11 +2,12 @@
 
 校验 ``extensions/testing/scripts/python/parse_test_results.py`` 输出：
 - unit_tests (total/passed/failed/pass_rate)
-- contract_tests (total/passed/failed/pass_rate)
 - coverage (line/branch/method/instruction/complexity_coverage)
 
+v1.5：契约测试概念已移除，所有 surefire 测试统一按单测统计。
+
 测试场景：
-- 有效 surefire + jacoco -> 正确分类与计数
+- 有效 surefire + jacoco -> 正确计数
 - 缺 surefire 目录 -> 测试计数全 0
 - 缺 jacoco 文件 -> 覆盖率全 0
 - 空 surefire 目录（无 XML）-> 测试计数全 0
@@ -50,12 +51,12 @@ SUREFIRE_UNIT_XML = """\
 </testsuite>
 """
 
-SUREFIRE_CONTRACT_XML = """\
+SUREFIRE_SECOND_XML = """\
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.example.TransferContractTest" tests="2" failures="1" errors="0">
-  <testcase name="shouldReturnSuccessOnValidRequest" classname="com.example.TransferContractTest" time="0.005"/>
-  <testcase name="shouldReturn400OnInvalidAmount" classname="com.example.TransferContractTest" time="0.003">
-    <failure message="expected 400 but was 200"/>
+<testsuite name="com.example.TransferServiceTest" tests="2" failures="1" errors="0">
+  <testcase name="shouldReturnSuccessOnValidRequest" classname="com.example.TransferServiceTest" time="0.005"/>
+  <testcase name="shouldReturnErrorOnInvalidAmount" classname="com.example.TransferServiceTest" time="0.003">
+    <failure message="expected INVALID_AMOUNT but was null"/>
   </testcase>
 </testsuite>
 """
@@ -77,25 +78,20 @@ def test_script_exists():
 
 
 def test_parse_valid_surefire_and_jacoco(tmp_path: Path):
-    """有效 surefire（1 unit + 1 ContractTest）+ jacoco -> 正确分类与计数。"""
+    """有效 surefire（2 个 testsuite）+ jacoco -> 正确计数。"""
     sf_dir = tmp_path / "surefire-reports"
     sf_dir.mkdir()
     (sf_dir / "TEST-AccountServiceTest.xml").write_text(SUREFIRE_UNIT_XML, encoding="utf-8")
-    (sf_dir / "TEST-TransferContractTest.xml").write_text(SUREFIRE_CONTRACT_XML, encoding="utf-8")
+    (sf_dir / "TEST-TransferServiceTest.xml").write_text(SUREFIRE_SECOND_XML, encoding="utf-8")
     jacoco = tmp_path / "jacoco.xml"
     jacoco.write_text(JACOCO_XML, encoding="utf-8")
 
     data = _run_py(sf_dir, jacoco)
-    # unit: 3 tests, 3 passed, 0 failed
-    assert data["unit_tests"]["total"] == 3
-    assert data["unit_tests"]["passed"] == 3
-    assert data["unit_tests"]["failed"] == 0
-    assert data["unit_tests"]["pass_rate"] == 100
-    # contract: 2 tests, 1 passed, 1 failed
-    assert data["contract_tests"]["total"] == 2
-    assert data["contract_tests"]["passed"] == 1
-    assert data["contract_tests"]["failed"] == 1
-    assert data["contract_tests"]["pass_rate"] == 50
+    # 全部统一按单测统计：3+2=5 tests, 3+1=4 passed, 1 failed -> 80%
+    assert data["unit_tests"]["total"] == 5
+    assert data["unit_tests"]["passed"] == 4
+    assert data["unit_tests"]["failed"] == 1
+    assert data["unit_tests"]["pass_rate"] == 80
     # coverage: LINE 50/55=91%, BRANCH 15/18=83%, METHOD 20/22=91%, INSTRUCTION 90/100=90%, COMPLEXITY 10/13=77%
     assert data["coverage"]["line_coverage"] == 91
     assert data["coverage"]["branch_coverage"] == 83
@@ -113,8 +109,6 @@ def test_missing_surefire_dir(tmp_path: Path):
     data = _run_py(sf_dir, jacoco)
     assert data["unit_tests"]["total"] == 0
     assert data["unit_tests"]["pass_rate"] == 0
-    assert data["contract_tests"]["total"] == 0
-    assert data["contract_tests"]["pass_rate"] == 0
     # jacoco 仍能解析
     assert data["coverage"]["line_coverage"] == 91
 
@@ -144,4 +138,3 @@ def test_empty_surefire_dir(tmp_path: Path):
 
     data = _run_py(sf_dir, jacoco)
     assert data["unit_tests"]["total"] == 0
-    assert data["contract_tests"]["total"] == 0

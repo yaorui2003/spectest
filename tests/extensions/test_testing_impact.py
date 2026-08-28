@@ -94,66 +94,6 @@ class TestImpactBodySections:
         assert "ImpactReport" in body
 
 
-# ── Body: functional case set (TC, e2e planning, v0.6) ───────────────────────
-
-
-class TestImpactE2ECaseSet:
-    """v0.6: impact 生成功能测试案例集（TC-xx，供前端 e2e 测试 AI 使用）。
-
-    断言只检查内容关键词，不检查表格框线字符（避免冗余）。
-    """
-
-    def test_body_generates_functional_case_set(self):
-        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
-        assert "功能测试案例集" in body
-        assert "TC-" in body
-
-    def test_body_case_set_has_type_categories(self):
-        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
-        assert "正向" in body
-        assert "异常" in body
-        assert "交互" in body
-
-    def test_body_case_set_is_self_contained(self):
-        """每条用例自包含（前置/步骤/预期），可独立转发给 e2e AI。"""
-        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
-        assert "自包含" in body
-        assert "前置" in body
-        assert "预期" in body
-
-    def test_body_case_set_traces_rules(self):
-        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
-        assert "关联" in body
-        assert "business_rules" in body
-
-    def test_body_case_set_has_e2e_ai_guidance(self):
-        """面向 e2e 测试 AI 的提示：具体测试数据/精确文案，禁含糊表述。"""
-        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
-        assert "e2e" in body.lower()
-        assert "测试数据" in body
-        assert "禁止" in body
-
-    def test_body_case_set_not_in_gate(self):
-        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
-        assert "不进门槛" in body or "不进门禁" in body
-
-    def test_body_case_set_uses_given_when_then(self):
-        """v0.6: 案例集按 Given-When-Then 编写（e2e AI 易解析）。"""
-        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
-        assert "**Given**" in body
-        assert "**When**" in body
-        assert "**Then**" in body
-
-    def test_body_case_set_references_e2e_template(self):
-        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
-        assert "e2e-case-template" in body
-
-    def test_body_case_set_no_ascii_table(self):
-        """不再用 ASCII 表格（冗余），改结构化 markdown 块。"""
-        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
-        assert "┌" not in body, "v0.6: 功能测试案例集应弃用 ASCII 框线表格"
-
-
 # ── Body: risk tiering rules (v0.6 9.7) ──────────────────────────────────────
 
 
@@ -208,32 +148,6 @@ class TestImpactRiskTieringRules:
         assert "固定三档" in body, "v0.6 9.7: 输出必须固定三档 high/medium/low"
 
 
-# ── Body: functional case set covered_rules (v0.6 9.9) ───────────────────────
-
-
-class TestImpactCaseSetCoveredRules:
-    """v0.6 9.9: functional case set 的关联规则字段即 covered_rules，供 gate
-    步骤 1 e2e 用例选择执行求交消费。"""
-
-    def test_body_declares_covered_rules_field(self):
-        """步骤 5.2 必须声明关联规则字段即 covered_rules。"""
-        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
-        assert "covered_rules" in body
-        assert "关联规则" in body
-
-    def test_body_covered_rules_consumed_by_gate(self):
-        """covered_rules 必须说明供 gate 求交 + e2e 选择执行消费（9.9）。"""
-        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
-        assert "求交" in body, "covered_rules 必须说明与受影响规则求交"
-        assert "选择执行" in body, "covered_rules 必须说明 e2e 用例选择执行"
-
-    def test_body_covered_rules_must_per_case(self):
-        """契约不变量：每条 TC MUST 携带 covered_rules，缺失降级手工。"""
-        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
-        assert "MUST 携带" in body, "契约不变量必须要求每条 TC 携带 covered_rules"
-        assert "降级手工" in body or "自动降级" in body
-
-
 # ── Body: artifact path (v0.4) ───────────────────────────────────────────────
 
 
@@ -253,3 +167,51 @@ class TestImpactArtifactPath:
             "v0.4: 废弃 .specify/extensions/testing/ 产物路径，应改为 "
             "specs/<feature>/docs/"
         )
+
+
+# ── Body: v0.63 双源规则变更提取 + 顶层锚 FR-xxx ─────────────────────────────
+
+
+class TestImpactV063DualSourceExtraction:
+    """v0.63 3.4: impact 步骤 1 规则变更提取改为双源设计——权威源 =
+    spec.md `### Functional Requirements` 段（FR-001）优先 / `## Business Rules`
+    段（R\\d+）兼容回落 + 代码侧 @Spec 差分补充信号；affected_rules 统一顶层锚
+    FR-xxx 格式（子编号不进入）。"""
+
+    def test_body_declares_dual_source_design(self):
+        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
+        assert "### Functional Requirements" in body, "权威源必须指向 FR 段"
+        assert "优先" in body, "FR 段必须标注为优先取用"
+
+    def test_body_fr_section_is_primary_authority(self):
+        """权威源 = spec.md ### Functional Requirements 段（FR-001）优先。"""
+        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
+        assert "### Functional Requirements" in body, "权威源必须指向 FR 段"
+        assert "优先" in body, "FR 段必须标注为优先取用"
+
+    def test_body_business_rules_fallback(self):
+        """## Business Rules 段兼容回落（老项目 v0.6 行为）。"""
+        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
+        assert "Business Rules" in body
+        assert "回落" in body, "Business Rules 段必须标注为兼容回落路径"
+
+    def test_body_code_side_spec_diff(self):
+        """增补代码侧 @Spec 差分信号（新增/删除/移动注解）。"""
+        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
+        assert "@Spec 差分" in body, "v0.63 3.4.3: 必须含代码侧 @Spec 差分信号"
+        assert "合并去重" in body, "@Spec 差分结果必须与权威源 diff 合并去重"
+
+    def test_body_subscenario_excluded_from_affected(self):
+        """子场景编号（FR-001-R1）不进入 affected_rules——只到顶层锚。"""
+        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
+        assert "不进入 affected_rules" in body, (
+            "v0.63 3.4.1: 子场景编号必须声明不进入 affected_rules"
+        )
+
+    def test_body_affected_rules_top_level_anchor(self):
+        """affected_rules 统一顶层锚 FR-xxx 格式（不用子编号）。"""
+        body = _read_body(IMPACT_MD.read_text(encoding="utf-8"))
+        assert "顶层锚 FR-xxx" in body or "顶层锚粒度" in body, (
+            "affected_rules 必须统一顶层锚 FR-xxx 格式"
+        )
+        assert "子场景编号" in body, "必须声明子场景编号（FR-001-R1）相关约束"

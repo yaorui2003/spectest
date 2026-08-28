@@ -3,8 +3,8 @@ schema_version: "1.0"
 extension:
   id: testing
   name: Speckit Testing
-  version: 1.4.0
-  description: "Spec 驱动测试先行验证，含 @Spec 注解追溯与自动门禁（技术栈必需前置 + 脚本化 + 硬校验），并含可选前端测试支持（单测骨架 + 确定性 e2e + 用例选择执行，默认不做不 FAIL）"
+  version: 1.5.0
+  description: "Spec 驱动测试先行验证，含 @Spec 注解追溯与自动门禁（技术栈必需前置 + 脚本化 + 硬校验）。v1.5：仅保留单元测试要求（删除契约测试与前端测试/e2e 支持）"
   author: speckit-core
   repository: https://github.com/yaorui2003/spectest
   license: MIT
@@ -39,25 +39,13 @@ provides:
       description: "Java Service 代码模板（带 @Spec 注解占位符）"
     - name: java-unit-test-template
       file: templates/java-unit-test.template.java
-      description: "JUnit5 单测模板（带 @DisplayName 规则标注）"
-    - name: contract-test-template
-      file: templates/contract-test.template.java
-      description: "契约测试模板（基于 contract mock）"
+      description: "单测模板（JUnit5 @DisplayName / JUnit4 测试方法级 @Spec 规则标注）"
     - name: test-plan-template
       file: templates/test-plan-template.md
       description: "测试计划文档模板"
-    - name: e2e-case-template
-      file: templates/e2e-case-template.md
-      description: "功能测试案例集模板（Given-When-Then，供前端 e2e 测试 AI 使用）"
     - name: spec-trace-matrix-template
       file: templates/spec-trace-matrix.md
       description: "Spec 追溯矩阵模板"
-    - name: frontend-unit-test-template
-      file: templates/frontend-unit-test.template.ts
-      description: "前端单测模板（vitest + @vue/test-utils + happy-dom，describe 对齐规则编号）"
-    - name: frontend-e2e-template
-      file: templates/frontend-e2e.template.spec.js
-      description: "前端确定性 e2e 模板（Playwright，可选实施：stub 外部不确定依赖 + covered_rules 元数据）"
 
   scripts:
     - name: scan-spec-annotations
@@ -74,7 +62,7 @@ provides:
       runtimes: [python]
     - name: scan-test-stack
       file: scripts/python/scan_test_stack.py
-      description: "测试技术栈硬校验脚本（禁 PowerMock / @SpringBootTest）"
+      description: "测试技术栈硬校验脚本（禁 PowerMock / @SpringBootTest / @Autowired）"
       runtimes: [python]
     - name: run-gate
       file: scripts/python/run_gate.py

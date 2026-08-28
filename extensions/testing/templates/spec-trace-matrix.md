@@ -13,16 +13,14 @@
 
 ## 追溯矩阵
 
-| Spec 规则（FR 顶层锚） | 描述 | 代码位置（@Spec） | 单测（@DisplayName） | 契约测试 |
-|---|---|---|---|---|
-| {{rule_id}} | {{description}} | {{code_location}} | {{unit_test_display_name}} | {{contract_test_ids}} |
-| FR-001 | 金额>0 | {{service_class}}.{{method_name}}:{{line}} | UT-01: FR-001-R1-转账金额为0应抛出INVALID_AMOUNT | CT-02, CT-03 |
-| FR-002 | 转出账户存在 | {{service_class}}.{{method_name}}:{{line}} | UT-02: FR-002-R1-转出账户不存在应抛出ACCOUNT_NOT_FOUND | CT-04 |
-| FR-003 | 转出未冻结 | {{service_class}}.{{method_name}}:{{line}} | UT-03: FR-003-R1-转出账户冻结应抛出ACCOUNT_FROZEN | CT-05 |
-| FR-004 | 余额充足 | {{service_class}}.{{method_name}}:{{line}} | UT-04: FR-004-R1-余额不足应抛出INSUFFICIENT_BALANCE | CT-06 |
-| FR-005 | 转入账户存在 | {{service_class}}.{{method_name}}:{{line}} | UT-05: FR-005-R1-转入账户不存在应抛出ACCOUNT_NOT_FOUND | CT-07 |
-| FR-006 | 原子操作 | {{service_class}}.{{method_name}}:{{line}} | UT-06: FR-006-R1-正常转账应原子扣减与入账 | CT-01 |
-| FR-007 | 禁止自转 | {{service_class}}.{{method_name}}:{{line}} | UT-07: FR-007-R1-自转账应抛出SELF_TRANSFER_NOT_ALLOWED | CT-08 |
+| Spec 规则（FR 顶层锚） | 描述 | 代码位置（@Spec） | 单测规则标注 |
+|---|---|---|---|
+| {{rule_id}} | {{description}} | {{code_location}} | {{unit_test_annotation}} |
+| FR-001 | 金额>0 | {{service_class}}.{{method_name}}:{{line}} | FR-001-R1-转账金额为0应抛出INVALID_AMOUNT |
+| FR-002 | 转出账户存在 | {{service_class}}.{{method_name}}:{{line}} | FR-002-R1-转出账户不存在应抛出ACCOUNT_NOT_FOUND |
+
+> 单测规则标注 = JUnit5 `@DisplayName("FR-xxx-Rm-...")` 或 JUnit4 测试方法级
+> `@Spec(rule="FR-xxx")`。
 
 ---
 
@@ -32,8 +30,7 @@
 |------|------|
 | Spec 规则总数 | {{spec_rules_total}} |
 | @Spec 注解覆盖规则数 | {{annotated_count}} |
-| 单测 @DisplayName 对齐数 | {{displayname_aligned}} |
-| 契约测试覆盖规则数 | {{contract_covered_count}} |
+| 单测规则标注对齐数 | {{displayname_aligned}} |
 | 未实现规则 | {{unimplemented_rules}} |
 | 孤儿注解 | {{orphan_annotations}} |
 | 规则覆盖率 | {{coverage_percent}}% |
@@ -45,7 +42,6 @@
 | 维度 | 总数 | 通过 | 失败 | 通过率 |
 |------|------|------|------|--------|
 | 单测 | {{unit_total}} | {{unit_passed}} | {{unit_failed}} | {{unit_pass_rate}}% |
-| 契约测试 | {{contract_total}} | {{contract_passed}} | {{contract_failed}} | {{contract_pass_rate}}% |
 
 | 覆盖率维度 | 实际值 | 阈值 | 结果 |
 |------------|--------|------|------|
@@ -61,5 +57,6 @@
 
 - [ ] 追溯矩阵覆盖 spec.md 全部 FR 段规则（顶层锚 FR-xxx）
 - [ ] 每行代码位置（@Spec）与扫描脚本输出一致
-- [ ] 每行单测 @DisplayName（FR-xxx-Rm）与 @Spec 顶层锚（FR-xxx）按 FR 前缀双向对齐
+- [ ] 每行单测规则标注（@DisplayName FR-xxx-Rm 或测试方法级 @Spec）与 @Spec
+      顶层锚（FR-xxx）按 FR 前缀双向对齐
 - [ ] 引用而非重生成 ImpactReport

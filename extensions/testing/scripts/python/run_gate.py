@@ -5,20 +5,23 @@ v0.4 核心改造：把 ``speckit.testing.gate`` 门禁的全部确定性逻辑�
 AI 仅读 stdout 判定 JSON，**不能改判、不能补写 gate-result.md、不能跳过步骤**
 （直击试点 P0 #1：Agent 伪造覆盖率）。
 
-职责（v0.4 第五章 5.2 的 9 步 + v0.5 步骤 5.5 关键路径对抗校验 + v0.6 改进项）:
+职责（v0.4 第五章 5.2 的 9 步 + v0.5 步骤 5.5 关键路径对抗校验 + v1.5 简化）:
 
 0. 检查 ``specs/<feature>/docs/impact-report.md`` 存在（不存在 -> FAIL，堵 P0 #3）
 1. ``mvn clean test``（强制 clean，杜绝 target 残留污染，堵 P0 #2；在
    ``--project`` 目录执行，AI 负责传对含 pom.xml 的模块目录）
-2. 调 ``scan_test_stack``（forbidden_findings 非空 -> FAIL）
+2. 调 ``scan_test_stack``（forbidden_findings 非空 -> FAIL；禁 PowerMock /
+   @SpringBootTest / @Autowired）
 3. 调 ``parse_test_results``（jacoco.xml/surefire-reports 缺失 -> FAIL，不降级；
    消费其 ``source_lines`` 行级数据做 diff coverage 判定）
 4. 调 ``scan_spec_annotations``（unimplemented_rules/orphan_annotations 非空 -> FAIL；
    读取其 ``unspec_codes`` 漂移告警，MEDIUM 不阻断）
-5. 内联解析 test 源码 ``@DisplayName("Rn-...")`` 算对齐数
-5.5. 关键路径对抗校验（v0.5 新增）：读 impact-report 逐规则 risk + 检测
-    ``@DisplayName("Rn-对抗-...")``；``critical_path_required=true`` 且 high
-    风险规则 0 对抗用例 -> FAIL（configurable，false 降级跳过）
+5. 内联解析 test 源码算对齐数（**双通道**）：JUnit5 ``@DisplayName("FR-xxx-Rm-...")``
+   或测试方法级 ``@Spec(rule="FR-xxx")``（JUnit4 通道，@Spec 与 JUnit 版本无关）
+5.5. 关键路径对抗校验（v0.5 新增）：读 impact-report 逐规则 risk + 检测对抗标注
+    （`@DisplayName("FR-xxx-Rm-对抗-...")` 或 `@Spec(..., description="对抗-...")`）；
+    ``critical_path_required=true`` 且 high 风险规则 0 对抗用例 -> FAIL
+    （configurable，false 降级跳过）
 6. 读 ``impact-report.md`` 的 ``risk_level`` + 读 ``testing-config.yml`` 套风险档阈值
 7. 逐项比对覆盖率/通过率/Spec 覆盖率与阈值（**diff coverage**：只判 MR/工作区
    变更行覆盖率，``git diff --unified=0`` 提取变更行、JaCoCo 行级数据判覆盖；
@@ -60,11 +63,39 @@ import subprocess
 import sys
 from pathlib import Path
 
-# @DisplayName 内联解析正则：@DisplayName("Rn-<描述>")，提取规则编号
-DISPLAYNAME_RE = re.compile(r'@DisplayName\s*\(\s*"R(\d+)-')
+# @DisplayName 内联解析正则：@DisplayName("FR-001-R1-<描述>") 提取顶层锚 FR-001
+# （按前缀 FR 分组对齐；前一分支新体系 FR-xxx-Rm，后一分支老项目 R 体系）；
+# 不匹配的 @DisplayName 不计入对齐（mismatch 由总-对齐差得出）。
+DISPLAYNAME_RE = re.compile(
+    r'@DisplayName\s*\(\s*"(?:(FR-\d+)-R\d+-|R(\d+)-)'
+)
 
-# 对抗用例识别：@DisplayName("Rn-对抗-...")，提取规则编号（v0.5 步骤 5.5）
-ADVERSARIAL_RE = re.compile(r'@DisplayName\s*\(\s*"R(\d+)-对抗')
+# JUnit4 通道（v1.5）：测试方法级 @Spec 注解作为对齐信号（@Spec 为 spec-kit
+# 自定义注解，与 JUnit 版本无关）。rule 取顶层锚 FR-xxx / 老项目 R\d+；
+# 子编号 -R\d+ 被剥离，永不进入比对。
+TEST_SPEC_RE = re.compile(
+    r'@Spec\s*\(\s*capability\s*=\s*"[^"]*"\s*,\s*rule\s*=\s*"(?:(FR-\d+)|(R\d+))(?:-R\d+)?"'
+    r'(?:\s*,\s*description\s*=\s*"[^"]*")?\s*\)'
+)
+
+# 对抗用例识别：@DisplayName("FR-001-R1-对抗-...") / @DisplayName("Rn-对抗-...")
+# 或 JUnit4 通道 @Spec(rule=..., description="对抗-..."...)（v1.5）
+ADVERSARIAL_RE = re.compile(
+    r'@DisplayName\s*\(\s*"(?:(FR-\d+)-R\d+-对抗|R(\d+)-对抗)'
+)
+TEST_SPEC_ADVERSARIAL_RE = re.compile(
+    r'@Spec\s*\(\s*capability\s*=\s*"[^"]*"\s*,\s*rule\s*=\s*"(?:(FR-\d+)|(R\d+))'
+    r'(?:-R\d+)?"\s*,\s*description\s*=\s*"对抗'
+)
+
+
+def _rule_from_displayname_match(m: re.Match) -> str:
+    """把 @DisplayName / 对抗匹配归一为顶层锚。
+
+    - 新体系 ``FR-001-R1-...`` -> ``FR-001``（仅顶层锚，按前缀 FR 分组）；
+    - 老项目 ``R1-...`` -> ``R1``（Business Rules 回落）。
+    """
+    return m.group(1) if m.group(1) is not None else "R" + m.group(2)
 
 # diff coverage：git diff hunk 头解析（U0 时新文件变更行 = c..c+d-1）
 # @@ -a,b +c,d @@；b/d 缺省为 1（单行）。MULTILINE：hunk 行在 diff 输出中间
@@ -291,7 +322,7 @@ def _parse_affected_rules(impact_path: Path) -> dict[str, str]:
     """从 impact-report.md 解析逐规则 risk（rule -> high/medium/low）。
 
     容错：解析失败返回空 dict（不致 gate FAIL，仅跳过对抗硬判）。
-    逐行扫描 "- rule: Rn" 与后续 "risk: level" 配对。
+    逐行扫描 "- rule: FR-001"（或老格式 "- rule: Rn"）与后续 "risk: level" 配对。
     """
     try:
         text = impact_path.read_text(encoding="utf-8")
@@ -300,7 +331,7 @@ def _parse_affected_rules(impact_path: Path) -> dict[str, str]:
     rules: dict[str, str] = {}
     current_rule = None
     for line in text.splitlines():
-        m = re.match(r'\s*-\s*rule:\s*(R\d+)', line)
+        m = re.match(r'\s*-\s*rule:\s*(FR-\d+|R\d+)', line)
         if m:
             current_rule = m.group(1)
             continue
@@ -313,7 +344,11 @@ def _parse_affected_rules(impact_path: Path) -> dict[str, str]:
 
 
 def _count_adversarial_tests(test_source: str) -> dict[str, int]:
-    """扫描测试源码，统计每规则的对抗用例数（@DisplayName("Rn-对抗-...")）。"""
+    """扫描测试源码，统计每规则的对抗用例数。
+
+    双通道（v1.5）：``@DisplayName("FR-xxx-Rm-对抗-...")``（JUnit5）或测试方法级
+    ``@Spec(rule="FR-xxx", description="对抗-...")``（JUnit4）。归一为顶层锚计数。
+    """
     counts: dict[str, int] = {}
     src = Path(test_source)
     if not src.is_dir():
@@ -324,7 +359,10 @@ def _count_adversarial_tests(test_source: str) -> dict[str, int]:
         except OSError:
             continue
         for m in ADVERSARIAL_RE.finditer(text):
-            rule = "R" + m.group(1)
+            rule = _rule_from_displayname_match(m)
+            counts[rule] = counts.get(rule, 0) + 1
+        for m in TEST_SPEC_ADVERSARIAL_RE.finditer(text):
+            rule = m.group(1) if m.group(1) is not None else "R" + m.group(2)
             counts[rule] = counts.get(rule, 0) + 1
     return counts
 
@@ -337,7 +375,6 @@ _DEFAULT_UNIT = {
     "complexity_coverage_min": 70,
     "pass_rate_min": 100,
 }
-_DEFAULT_CONTRACT_PASS_RATE = 95
 _DEFAULT_SPEC_RULE_COVERAGE_MIN = 100
 _DEFAULT_REQUIRE_DISPLAYNAME_MATCH = True
 
@@ -410,9 +447,6 @@ def _resolve_thresholds(cfg: dict, risk_level: str) -> dict:
     """合并 gate 默认阈值与 risk_overrides.<risk> 覆盖（覆盖值优先），返回生效阈值。"""
     gate = cfg.get("gate", {}) if isinstance(cfg.get("gate"), dict) else {}
     unit = gate.get("unit_test", {}) if isinstance(gate.get("unit_test"), dict) else {}
-    contract = (
-        gate.get("contract_test", {}) if isinstance(gate.get("contract_test"), dict) else {}
-    )
     trace = (
         gate.get("spec_traceability", {})
         if isinstance(gate.get("spec_traceability"), dict)
@@ -429,9 +463,6 @@ def _resolve_thresholds(cfg: dict, risk_level: str) -> dict:
             "complexity_coverage_min", _DEFAULT_UNIT["complexity_coverage_min"]
         ),
         "unit_pass_rate_min": unit.get("pass_rate_min", _DEFAULT_UNIT["pass_rate_min"]),
-        "contract_pass_rate_min": contract.get(
-            "pass_rate_min", _DEFAULT_CONTRACT_PASS_RATE
-        ),
         "spec_rule_coverage_min": trace.get(
             "spec_rule_coverage_min", _DEFAULT_SPEC_RULE_COVERAGE_MIN
         ),
@@ -444,9 +475,6 @@ def _resolve_thresholds(cfg: dict, risk_level: str) -> dict:
         ov = overrides[risk_level]
         if isinstance(ov, dict):
             ov_unit = ov.get("unit_test", {}) if isinstance(ov.get("unit_test"), dict) else {}
-            ov_contract = (
-                ov.get("contract_test", {}) if isinstance(ov.get("contract_test"), dict) else {}
-            )
             key_map = {
                 "line_coverage_min": "line_coverage_min",
                 "branch_coverage_min": "branch_coverage_min",
@@ -458,19 +486,21 @@ def _resolve_thresholds(cfg: dict, risk_level: str) -> dict:
             for k, dk in key_map.items():
                 if k in ov_unit:
                     thr[dk] = ov_unit[k]
-            if "pass_rate_min" in ov_contract:
-                thr["contract_pass_rate_min"] = ov_contract["pass_rate_min"]
     return thr
 
 
 def _parse_displayname_match(test_source: str, spec_coverage: dict) -> dict:
-    """内联解析 test 源码 @DisplayName("Rn-...")，与 @Spec 已注解规则交叉对齐（双向）。
+    """内联解析 test 源码对齐信号，与 @Spec 已注解规则双向对齐。
 
-    正向（DisplayName->@Spec）：total = @DisplayName 中带规则编号的条数；
-    aligned = 其中规则已出现在 @Spec annotated_rules 的条数；
-    mismatch_count = total - aligned（测试指向不存在的 @Spec 规则）。
-    反向（@Spec->DisplayName）：untested_spec_rules = 有 @Spec 注解但无任何
-    @DisplayName 测试的规则（按 spec_rules 顺序，保证输出确定性）。
+    双通道（v1.5）：
+    - JUnit5：``@DisplayName("FR-xxx-Rm-...")``（顶层锚 FR 前缀分组）
+    - JUnit4：测试方法级 ``@Spec(rule="FR-xxx")``（@Spec 为 spec-kit 自定义注解，
+      与 JUnit 版本无关；子编号 -R 被剥离）
+
+    正向（测试->@Spec）：total = 带规则编号的标注条数；aligned = 其中规则已
+    出现在 @Spec annotated_rules 的条数；mismatch_count = total - aligned。
+    反向（@Spec->测试）：untested_spec_rules = 有 @Spec 注解但无任何对齐标注的
+    规则（按 spec_rules 顺序，保证输出确定性）。
     """
     annotated = set((spec_coverage.get("annotated_rules") or {}).keys())
     spec_rules = spec_coverage.get("spec_rules") or []
@@ -485,7 +515,13 @@ def _parse_displayname_match(test_source: str, spec_coverage: dict) -> dict:
             except OSError:
                 continue
             for m in DISPLAYNAME_RE.finditer(text):
-                rule = "R" + m.group(1)
+                rule = _rule_from_displayname_match(m)
+                total += 1
+                displayname_rules.add(rule)
+                if rule in annotated:
+                    aligned += 1
+            for m in TEST_SPEC_RE.finditer(text):
+                rule = m.group(1) if m.group(1) is not None else "R" + m.group(2)
                 total += 1
                 displayname_rules.add(rule)
                 if rule in annotated:
@@ -516,7 +552,6 @@ def _format_gate_result_md(result: dict) -> str:
     mvn = result["mvn_clean_test"]
     risk = result["risk_level"]
     unit = result["unit_tests"]
-    contract = result["contract_tests"]
     cov = result["coverage"]
     spec = result["spec_coverage"]
     disp = result["displayname_match"]
@@ -529,7 +564,7 @@ def _format_gate_result_md(result: dict) -> str:
     lines.append(f"- mvn clean test: {mvn}")
     if mode == "degraded":
         lines.append("- 降级模式: 降级模式（无 java/mvn 或 --project 目录无 pom.xml）")
-        lines.append("- 说明: 无 java/mvn 或 --project 无 pom.xml，跳过单测/契约测试执行，仅做 @Spec 静态扫描")
+        lines.append("- 说明: 无 java/mvn 或 --project 无 pom.xml，跳过单测执行，仅做 @Spec 静态扫描")
         lines.append(f"- 降级原因: {result.get('degraded_reason', '')}")
     else:
         lines.append("- target 清理: 已清理（杜绝残留污染）")
@@ -555,12 +590,6 @@ def _format_gate_result_md(result: dict) -> str:
         lines.append("- diff coverage: N/A（降级模式）")
     lines.append(f"- 通过率: {unit['pass_rate']}% (阈值 >= {thr.get('unit_pass_rate', 0)}%)")
     lines.append("")
-    lines.append("### 契约测试明细")
-    lines.append(
-        f"- 总数: {contract['total']} | 通过: {contract['passed']}"
-        f" | 失败: {contract['failed']} | 通过率: {contract['pass_rate']}%"
-    )
-    lines.append("")
     lines.append("### Spec 规则覆盖矩阵")
     lines.append(
         f"- 规则总数: {len(spec.get('spec_rules', []))}"
@@ -568,6 +597,9 @@ def _format_gate_result_md(result: dict) -> str:
         f" | 未实现规则: {spec.get('unimplemented_rules', [])}"
         f" | 孤儿注解: {spec.get('orphan_annotations', [])}"
     )
+    rule_source = spec.get("rule_source", "")
+    if rule_source in ("fr-section", "business-rules", "none"):
+        lines.append(f"- 规则来源: {rule_source}（fr-section=spec.md Functional Requirements 段 / business-rules=Business Rules 段兼容 / none=无规则段）")
     lines.append(f"- DisplayName 对齐数: {disp['aligned']} / {disp['total']}")
     if disp.get("untested_spec_rules"):
         lines.append(f"- 有 @Spec 无 @DisplayName 测试的规则: {disp['untested_spec_rules']}")
@@ -693,7 +725,6 @@ def run(inputs: dict) -> dict:
 
     # 空数据默认值（degraded 模式全为 0）
     unit_tests = {"total": 0, "passed": 0, "failed": 0, "pass_rate": 0}
-    contract_tests = {"total": 0, "passed": 0, "failed": 0, "pass_rate": 0}
     coverage = {"line": 0, "branch": 0, "method": 0, "instruction": 0, "complexity": 0}
     displayname_match = {"aligned": 0, "total": 0, "mismatch_count": 0, "untested_spec_rules": []}
 
@@ -735,7 +766,6 @@ def run(inputs: dict) -> dict:
         # 填充 parse_test_results 数据
         if isinstance(parse_results, dict):
             unit_tests = parse_results.get("unit_tests") or unit_tests
-            contract_tests = parse_results.get("contract_tests") or contract_tests
             pr_cov = parse_results.get("coverage") or {}
             coverage = {
                 "line": pr_cov.get("line_coverage", 0),
@@ -745,19 +775,20 @@ def run(inputs: dict) -> dict:
                 "complexity": pr_cov.get("complexity_coverage", 0),
             }
 
-        # 步骤 5：@DisplayName 对齐（degraded 无单测可读，跳过）
+        # 步骤 5：测试规则对齐（双通道：@DisplayName JUnit5 / 测试方法级 @Spec JUnit4；
+        # degraded 无单测可读，跳过）
         displayname_match = _parse_displayname_match(test_source, spec_coverage)
         if thr["require_displayname_match"]:
             if displayname_match["mismatch_count"] > 0:
                 fail_reasons.append(
                     f"displayname_mismatch: {displayname_match['mismatch_count']}"
-                    " 个 @DisplayName 未与 @Spec 规则对齐"
+                    " 个测试标注未与 @Spec 规则对齐"
                 )
             untested = displayname_match.get("untested_spec_rules", [])
             if untested:
                 fail_reasons.append(
                     f"spec_rules_without_test: {len(untested)} 条规则有 @Spec"
-                    f" 但无 @DisplayName 测试 -> {untested}"
+                    f" 但无对齐测试（@DisplayName 或测试方法级 @Spec）-> {untested}"
                 )
 
     # 步骤 5.5：关键路径对抗校验（v0.5 新增，configurable）
@@ -778,8 +809,9 @@ def run(inputs: dict) -> dict:
     if critical_path_required and not degraded and missing_adversarial:
         fail_reasons.append(
             f"critical_path_adversarial: high 风险规则 {missing_adversarial}"
-            " 无对抗用例（@DisplayName(\"Rn-对抗-...\")) -> 补对抗用例"
-            " 或设 critical_path_required: false 降级"
+            ' 无对抗用例（@DisplayName("FR-xxx-Rm-对抗-..."，JUnit4 用测试方法级'
+            ' @Spec(rule="FR-xxx", description="对抗-...")）'
+            " -> 补对抗用例 或设 critical_path_required: false 降级"
         )
 
     # 步骤 7：阈值逐项比对
@@ -840,7 +872,6 @@ def run(inputs: dict) -> dict:
                 ("instruction_coverage", coverage["instruction"], thr["instruction_coverage_min"]),
                 ("complexity_coverage", coverage["complexity"], thr["complexity_coverage_min"]),
                 ("unit_pass_rate", unit_tests["pass_rate"], thr["unit_pass_rate_min"]),
-                ("contract_pass_rate", contract_tests["pass_rate"], thr["contract_pass_rate_min"]),
             ]
             for metric, actual, threshold in metrics:
                 ok = actual >= threshold
@@ -853,7 +884,6 @@ def run(inputs: dict) -> dict:
         if diff_mode in ("diff", "no_changes"):
             for metric, actual, threshold in [
                 ("unit_pass_rate", unit_tests["pass_rate"], thr["unit_pass_rate_min"]),
-                ("contract_pass_rate", contract_tests["pass_rate"], thr["contract_pass_rate_min"]),
             ]:
                 ok = actual >= threshold
                 threshold_results.append({
@@ -912,7 +942,6 @@ def run(inputs: dict) -> dict:
         "risk_level": risk_level,
         "mvn_clean_test": mvn_status,
         "unit_tests": unit_tests,
-        "contract_tests": contract_tests,
         "coverage": coverage,
         "spec_coverage": spec_coverage,
         "displayname_match": displayname_match,

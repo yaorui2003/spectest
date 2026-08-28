@@ -32,10 +32,13 @@ import re
 import sys
 from pathlib import Path
 
-# @Spec 注解正则：@Spec(capability="...", rule="Rn", description="...")
-# description 可选；字段间允许任意空白；rule 必须为 R\d+。
+# @Spec 注解正则：@Spec(capability="...", rule="FR-001", description="...")
+# description 可选；字段间允许任意空白；rule 支持顶层锚 FR-\d+（新体系，默认）
+# 与纯 R\d+（老项目 Business Rules 回落）；子编号 -R\d+ 被剥离、永不进入比对
+# （@Spec 永远只写顶层锚）。
 SPEC_ANNOTATION_RE = re.compile(
-    r'@Spec\s*\(\s*capability\s*=\s*"([^"]+)"\s*,\s*rule\s*=\s*"(R\d+)"'
+    r'@Spec\s*\(\s*capability\s*=\s*"([^"]+)"\s*,\s*rule\s*=\s*'
+    r'"(?:(FR-\d+)|(R\d+))(?:-R\d+)?"'
     r'(?:\s*,\s*description\s*=\s*"([^"]*)")?\s*\)'
 )
 
@@ -51,11 +54,15 @@ METHOD_SIG_RE = re.compile(
     r"\b(?:public|protected|private)\s+(?:[\w<>,\s\[\]]+?\s+)?(\w+)\s*\("
 )
 
-# spec.md business_rules 章节标题（含 "business rules" 或 "business_rules"）
+# spec.md 权威源段标题：
+# ① ### Functional Requirements 段（FR 顶层锚，新项目默认/唯一必选路径，v0.63 起）
+# ② ## Business Rules 段（R\d+，老项目兼容回落，v0.6 行为）
+FR_HEADER_RE = re.compile(r"^#{1,6}\s+Functional Requirements", re.IGNORECASE)
 BUSINESS_RULES_HEADER_RE = re.compile(r"^#{1,6}\s+.*business[\s_-]+rules", re.IGNORECASE)
 
-# 章节内行首规则编号：- R1: / * **R1** / R1: ...
-RULE_LINE_RE = re.compile(r"^\s*[-*]?\s*\**?(R\d+)\b")
+# 章节内行首规则编号：- FR-001: / - **FR-001** / - R1: / * **R1** / R1: ...
+# 同时认 FR 顶层锚与新体系；只提取顶层锚（FR-\d+ / R\d+），FR 的 -R 不做（段内无）
+RULE_LINE_RE = re.compile(r"^\s*[-*]?\s*\**?(FR-\d+|R\d+)\b")
 
 # 查找方法名的最大向后扫描行数
 _METHOD_SCAN_WINDOW = 20
@@ -93,6 +100,56 @@ def parse_spec_rules(spec_path: Path) -> list[str]:
                 rules.append(rule)
                 seen.add(rule)
     return rules
+
+
+def parse_fr_section(spec_path: Path) -> list[str]:
+    """解析 spec.md 的 ``### Functional Requirements`` 段，提取 FR 顶层锚（去重保序）。
+
+    v0.66（v0.63 六章 6.1）：新项目规则权威源 = spec.md 原生 FR 段
+    （``FR-001`` 编号，上游原版模板 REQUIRED 段，无 ``## Business Rules`` 段）。
+    行格式兼容 ``- **FR-001**: System MUST ...`` / ``- FR-001: ...`` 等。
+    """
+    text = spec_path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    in_section = False
+    rules: list[str] = []
+    seen: set[str] = set()
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            if FR_HEADER_RE.match(stripped):
+                in_section = True
+            else:
+                if in_section:
+                    break  # 离开 Functional Requirements 段
+            continue
+        if not in_section:
+            continue
+        m = RULE_LINE_RE.match(line)
+        if m:
+            rule = m.group(1)
+            if rule not in seen:
+                rules.append(rule)
+                seen.add(rule)
+    return rules
+
+
+def _resolve_rule_source(spec_path: Path) -> tuple[str, list[str]]:
+    """按优先级解析 spec.md 规则权威源（v0.63 2.3 / 3.4.1 契约）。
+
+    返回 ``(rule_source, rules)``：
+    - ``"fr-section"``：spec.md ``### Functional Requirements`` 段（FR-001，优先）；
+    - ``"business-rules"``：spec.md ``## Business Rules`` 段（R\\d+，老项目兼容回
+      落，仅在 FR 段缺失时启用）；
+    - ``"none"``：两者皆无 -> 空规则集。
+    """
+    fr_rules = parse_fr_section(spec_path)
+    if fr_rules:
+        return "fr-section", fr_rules
+    br_rules = parse_spec_rules(spec_path)
+    if br_rules:
+        return "business-rules", br_rules
+    return "none", []
 
 
 def _find_method_name(lines: list[str], spec_line_idx: int) -> str | None:
@@ -179,7 +236,11 @@ def _parse_java_file_full(java_path: Path) -> tuple[list[dict], str, str]:
     annotations: list[dict] = []
     for i, line in enumerate(stripped):
         for m in SPEC_ANNOTATION_RE.finditer(line):
-            capability, rule, description = m.group(1), m.group(2), m.group(3) or ""
+            capability = m.group(1)
+            # rule 归一为顶层锚：FR-\d+（新体系）优先，R\d+（老项目回落）兜底；
+            # 误带 -R 子编号会被正则剥离，永不进入比对
+            rule = m.group(2) if m.group(2) is not None else m.group(3)
+            description = m.group(4) or ""
             method_name = _find_method_name(stripped, i)
             if method_name is None:
                 method_name = class_name  # 类级注解兜底用类名
@@ -285,7 +346,7 @@ def scan(
 
     ``unspec_codes`` 为 MEDIUM 结构性告警，不参与 PASS/FAIL 判定。
     """
-    spec_rules = parse_spec_rules(spec_path)
+    rule_source, spec_rules = _resolve_rule_source(spec_path)
 
     annotations: list[dict] = []
     # 生产类清单（保持文件遍历顺序）：{package, class_name, annotated}
@@ -340,6 +401,7 @@ def scan(
         unspec_codes.append(f"{package}.{class_name}" if package else class_name)
 
     return {
+        "rule_source": rule_source,
         "spec_rules": spec_rules,
         "annotations": annotations,
         "annotated_rules": annotated_rules,

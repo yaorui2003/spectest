@@ -2,38 +2,39 @@
 #
 # 本文件随扩展安装，项目可在
 # .specify/extensions/testing/testing-config.yml 覆盖。
-# 字段含义与默认值见 contracts/testing-config.md。
 
-# 门禁阈值与测试策略配置
+# 门禁阈值配置
 gate:
   unit_test:
     line_coverage_min: 80          # 行覆盖率最低值（%）
     branch_coverage_min: 70        # 分支覆盖率最低值（%），任意风险均不低于此
     method_coverage_min: 80        # 方法覆盖率最低值（%）
     instruction_coverage_min: 85   # 指令覆盖率最低值（%）
-    complexity_coverage_min: 70   # 圈复杂度覆盖率最低值（%）
+    complexity_coverage_min: 70    # 圈复杂度覆盖率最低值（%）
     pass_rate_min: 100             # 通过率（%）
-  contract_test:
-    pass_rate_min: 95              # 契约测试通过率（%）
   spec_traceability:
     spec_rule_coverage_min: 100    # @Spec 注解覆盖 Spec 规则的比例（%）
-    require_displayname_match: true # 单测 @DisplayName 必须与 @Spec 规则对齐
-  ai_cross_validation: true  # v0.5 新增：是否启用 AI 交叉验证（默认 true）
-  diff_coverage_threshold: 80   # 变更行覆盖率阈值（%），run_gate --diff-threshold 可覆盖
-  diff_base: ""                 # 非空 = MR 对比分支（git merge-base 定位 base），空 = 工作区 vs HEAD
+    require_displayname_match: true # 单测标注（@DisplayName/@Spec）必须与 @Spec 规则对齐
+  ai_cross_validation: true        # 是否启用 AI 交叉验证（默认 true）
+  diff_coverage_threshold: 80      # 变更行覆盖率阈值（%），run_gate --diff-threshold 可覆盖
+  diff_base: ""                    # 非空 = MR 对比分支（git merge-base 定位 base），空 = 工作区 vs HEAD
 
-
-# 技术栈硬校验配置
+# 技术栈硬校验配置（scan_test_stack 检出即 FAIL）
 test_stack:
   forbid_powermock: true           # 禁用 PowerMock（覆盖率失真）
-  forbid_springboottest: true      # 禁用 @SpringBootTest 起容器（契约测试用 WireMock）
+  forbid_springboottest: true      # 禁用 @SpringBootTest 起容器
+  forbid_autowired: true           # 禁用 @Autowired（测试须显式 Mock/构造注入，不起 Spring 容器）
 
-# UNSPEC_CODE 漂移告警排除模式（v0.6 新增，9.6）
-# 追加到内置排除表（dto/vo/entity/config/exception/util/helper 包段、
-# *Mapper/*Config/*Factory/*Constants 类名后缀）之外的额外排除模式，逗号分隔；
+# UNSPEC_CODE 漂移告警排除模式，追加到内置排除表（dto/vo/entity/config/exception/
+# util/helper 包段、*Mapper/*Config/*Factory/*Constants 类名后缀）之外，逗号分隔；
 # 不含 * 的段按包段匹配，含 * 的模式匹配类名后缀（如 "*Legacy"）。
 scan:
   unspec_exclude_patterns: []      # 例：["legacy", "*Helper"]
+  # 规则权威源选择（scan/validate/gate 共用契约）：
+  # "auto" = FR 段优先（spec.md ### Functional Requirements，FR-001）>
+  #          Business Rules 段兼容（R\d+，老项目回落）> 空（none）
+  # 仅作文档性默认值说明：脚本当前按 auto 固定行为，无 CLI 覆盖开关。
+  rule_source: "auto"
 
 # 风险分级阈值覆盖（impact 标注风险等级后，gate 按风险套用）
 # 三档单调递减：high > medium > low
@@ -44,8 +45,6 @@ risk_overrides:
       method_coverage_min: 90
       instruction_coverage_min: 90
       complexity_coverage_min: 80
-      pass_rate_min: 100
-    contract_test:
       pass_rate_min: 100
   medium:
     unit_test:
@@ -60,9 +59,9 @@ risk_overrides:
       instruction_coverage_min: 80
       complexity_coverage_min: 60
 
-# 对抗测试阶段配置（v0.4 新增；v0.5 critical_path_required 语义改：gate 硬判开关）
+# 对抗测试阶段配置
 adversarial:
   enabled: true              # implement 4.5 阶段是否启用（AI 行为）
   max_iterations: 3
-  critical_path_required: true # v0.5 新语义：gate 是否硬判 high 风险规则对抗用例
+  critical_path_required: true # gate 是否硬判 high 风险规则对抗用例
                                # true=hard FAIL; false=降级（gate 跳过对抗检查）

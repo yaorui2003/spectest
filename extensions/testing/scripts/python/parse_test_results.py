@@ -2,7 +2,7 @@
 """Maven Surefire + JaCoCo 测试结果解析脚本（Python 版）。
 
 解析 surefire 目录下的 ``*.xml`` 报告与 JaCoCo 覆盖率 ``jacoco.xml``，
-输出结构化测试结果 JSON（单元测试/契约测试/覆盖率）。
+输出结构化测试结果 JSON（单测统计/覆盖率/行级覆盖）。
 
 用法::
 
@@ -20,9 +20,6 @@ import sys
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-# 契约测试类名标记
-CONTRACT_TEST_MARKER = "ContractTest"
-
 # JaCoCo counter type -> 输出字段名
 JACOCO_TYPE_MAP = {
     "LINE": "line_coverage",
@@ -34,9 +31,8 @@ JACOCO_TYPE_MAP = {
 
 
 def _parse_surefire(surefire_dir: Path) -> dict:
-    """解析 surefire 目录下的所有 *.xml，返回单元/契约测试统计。"""
+    """解析 surefire 目录下的所有 *.xml，返回单测统计。"""
     unit_total = unit_passed = unit_failed = 0
-    contract_total = contract_passed = contract_failed = 0
     if surefire_dir.is_dir():
         for xml in sorted(surefire_dir.glob("*.xml")):
             try:
@@ -44,35 +40,19 @@ def _parse_surefire(surefire_dir: Path) -> dict:
             except ET.ParseError:
                 continue
             for ts in root.iter("testsuite"):
-                name = ts.attrib.get("name", "")
                 tests = int(ts.attrib.get("tests", 0))
                 failures = int(ts.attrib.get("failures", 0))
                 errors = int(ts.attrib.get("errors", 0))
-                passed = tests - failures - errors
-                if CONTRACT_TEST_MARKER in name:
-                    contract_total += tests
-                    contract_failed += failures + errors
-                    contract_passed += passed
-                else:
-                    unit_total += tests
-                    unit_failed += failures + errors
-                    unit_passed += passed
+                unit_total += tests
+                unit_failed += failures + errors
+                unit_passed += tests - failures - errors
     unit_pass_rate = round(unit_passed / unit_total * 100) if unit_total > 0 else 0
-    contract_pass_rate = (
-        round(contract_passed / contract_total * 100) if contract_total > 0 else 0
-    )
     return {
         "unit_tests": {
             "total": unit_total,
             "passed": unit_passed,
             "failed": unit_failed,
             "pass_rate": unit_pass_rate,
-        },
-        "contract_tests": {
-            "total": contract_total,
-            "passed": contract_passed,
-            "failed": contract_failed,
-            "pass_rate": contract_pass_rate,
         },
     }
 
@@ -145,7 +125,6 @@ def parse_results(surefire_dir: Path, jacoco_file: Path) -> dict:
     cov, source_lines = _parse_jacoco(jacoco_file)
     return {
         "unit_tests": tests["unit_tests"],
-        "contract_tests": tests["contract_tests"],
         "coverage": cov,
         "source_lines": source_lines,
     }

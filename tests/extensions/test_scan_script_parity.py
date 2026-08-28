@@ -872,12 +872,12 @@ _PTR_SUREFIRE_XML = """\
 </testsuite>
 """
 
-_PTR_CONTRACT_XML = """\
+_PTR_SECOND_XML = """\
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.example.TransferContractTest" tests="2" failures="1" errors="0">
-  <testcase name="shouldReturnSuccessOnValidRequest" classname="com.example.TransferContractTest" time="0.005"/>
-  <testcase name="shouldReturn400OnInvalidAmount" classname="com.example.TransferContractTest" time="0.003">
-    <failure message="expected 400 but was 200"/>
+<testsuite name="com.example.TransferServiceTest" tests="2" failures="1" errors="0">
+  <testcase name="shouldReturnSuccessOnValidRequest" classname="com.example.TransferServiceTest" time="0.005"/>
+  <testcase name="shouldReturnErrorOnInvalidAmount" classname="com.example.TransferServiceTest" time="0.003">
+    <failure message="expected INVALID_AMOUNT but was null"/>
   </testcase>
 </testsuite>
 """
@@ -898,7 +898,7 @@ def _ptr_make_fixture(tmp_path: Path) -> tuple[Path, Path]:
     sf_dir = tmp_path / "surefire-reports"
     sf_dir.mkdir()
     (sf_dir / "TEST-AccountServiceTest.xml").write_text(_PTR_SUREFIRE_XML, encoding="utf-8")
-    (sf_dir / "TEST-TransferContractTest.xml").write_text(_PTR_CONTRACT_XML, encoding="utf-8")
+    (sf_dir / "TEST-TransferServiceTest.xml").write_text(_PTR_SECOND_XML, encoding="utf-8")
     jacoco = tmp_path / "jacoco.xml"
     jacoco.write_text(_PTR_JACOCO_XML, encoding="utf-8")
     return sf_dir, jacoco
@@ -914,18 +914,19 @@ def _ptr_run_py(sf_dir: Path, jacoco: Path) -> str:
 
 
 def test_parse_test_results_py(tmp_path: Path):
-    """parse_test_results: Python 输出契约（unit/contract/coverage/source_lines）。
+    """parse_test_results: Python 输出契约（unit/coverage/source_lines）。
 
     v0.6 起 parse_test_results 输出 ``source_lines``（行级覆盖率，供 diff
-    coverage 判定），不再输出 ``classes`` 键。
+    coverage 判定），不再输出 ``classes`` 键。v1.5 起契约测试概念移除，
+    所有 surefire 测试统一按单测统计（contract_tests 键删除）。
     """
     sf_dir, jacoco = _ptr_make_fixture(tmp_path)
     data = json.loads(_ptr_run_py(sf_dir, jacoco))
-    # 单测/契约测试明细
-    assert data["unit_tests"]["total"] == 3
-    assert data["unit_tests"]["passed"] == 3
-    assert data["contract_tests"]["total"] == 2
-    assert data["contract_tests"]["failed"] == 1
+    # 单测明细（全部统一统计：3 + 2 = 5）
+    assert data["unit_tests"]["total"] == 5
+    assert data["unit_tests"]["passed"] == 4
+    assert data["unit_tests"]["failed"] == 1
+    assert "contract_tests" not in data, "v1.5: contract_tests 键已删除"
     # 覆盖率聚合（键为 line_coverage 等，非 line_percent）
     assert data["coverage"]["line_coverage"] == round(50 / (5 + 50) * 100)
     # v0.6：source_lines 键存在（行级覆盖率），classes 键已删除
@@ -1023,6 +1024,17 @@ import org.springframework.boot.test.context.SpringBootTest;
 class IntegrationTest { }
 """
 
+_STS_AUTOWIRED_JAVA = """\
+package com.example;
+
+import org.springframework.beans.factory.annotation.Autowired;
+
+class AutowiredTest {
+    @Autowired
+    private AccountService accountService;
+}
+"""
+
 _STS_CLEAN_JAVA = """\
 package com.example;
 
@@ -1037,6 +1049,7 @@ def _sts_make_fixture(tmp_path: Path) -> Path:
     src.mkdir()
     (src / "ATest.java").write_text(_STS_POWERMOCK_JAVA, encoding="utf-8")
     (src / "BTest.java").write_text(_STS_CLEAN_JAVA, encoding="utf-8")
+    (src / "CTest.java").write_text(_STS_AUTOWIRED_JAVA, encoding="utf-8")
     (src / "ZTest.java").write_text(_STS_SPRINGBOOT_JAVA, encoding="utf-8")
     return src
 
@@ -1050,13 +1063,14 @@ def _sts_run_py(source_dir: Path) -> str:
 
 
 def test_scan_test_stack_py(tmp_path: Path):
-    """scan_test_stack: Python 输出契约（检出 PowerMock + @SpringBootTest）。"""
+    """scan_test_stack: Python 输出契约（检出 PowerMock + @SpringBootTest + @Autowired）。"""
     src = _sts_make_fixture(tmp_path)
     data = json.loads(_sts_run_py(src))
     findings = data["forbidden_findings"]
     types = {f["type"] for f in findings}
     assert "powermock" in types
     assert "springboottest" in types
+    assert "autowired" in types
     # 干净测试类不误报
     assert all("CleanTest" not in f.get("file", "") for f in findings)
 
@@ -1109,8 +1123,6 @@ gate:
     instruction_coverage_min: 85
     complexity_coverage_min: 70
     pass_rate_min: 100
-  contract_test:
-    pass_rate_min: 95
   spec_traceability:
     spec_rule_coverage_min: 100
     require_displayname_match: true
@@ -1122,8 +1134,6 @@ risk_overrides:
       method_coverage_min: 90
       instruction_coverage_min: 90
       complexity_coverage_min: 80
-      pass_rate_min: 100
-    contract_test:
       pass_rate_min: 100
   medium:
     unit_test:

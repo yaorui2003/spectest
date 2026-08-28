@@ -7,7 +7,7 @@ description: "Task list template for feature implementation (testing-tdd preset:
 
 **Input**: Design documents from `/specs/[###-feature-name]/`
 
-**Prerequisites**: plan.md (required), spec.md (required for user stories), test-plan.md (REQUIRED if speckit.testing.plan has been run — CT/UT 用例清单与验收阈值；缺失时测试任务按 contracts/ 与 spec.md FR 段推导，并在 tasks.md 中注明), research.md, data-model.md, contracts/
+**Prerequisites**: plan.md (required), spec.md (required for user stories), specs/<feature>/docs/test-plan.md (REQUIRED if speckit.testing.plan has been run — UT 用例清单与验收阈值；缺失时测试任务按 contracts/ 与 spec.md FR 段推导，并在 tasks.md 中注明), research.md, data-model.md, contracts/
 
 **Tests**: Tests are **REQUIRED** (NON-NEGOTIABLE). Every functional/implementation task MUST have a corresponding test task generated BEFORE it. Do not skip test generation.
 
@@ -17,7 +17,7 @@ description: "Task list template for feature implementation (testing-tdd preset:
 
 - **[P]**: Can run in parallel (different files, no dependencies)
 - **[Story]**: Which user story this task belongs to (e.g. US1, US2, US3)
-- **[Rule]**: 该任务追溯的规则编号（如 FR-001），支撑 gate 的 @Spec/@DisplayName 双向对齐
+- **[Rule]**: 该任务追溯的规则编号（如 FR-001），支撑 gate 的规则对齐校验
 - Include exact file paths in descriptions
 
 ## Path Conventions
@@ -49,20 +49,19 @@ description: "Task list template for feature implementation (testing-tdd preset:
   failure per the 3 conditions (see each test zone below), NOT compile failure.
   DO NOT keep these sample tasks in the generated tasks.md file.
 
-  双标签说明：每个任务带 [USx] 与 [Rn] 两个标签——
+  双标签说明：每个任务带 [USx] 与 [FR-xxx] 两个标签——
   - [USx] 是 spec-kit 的 user-story 组织索引键（核心 tasks 工作流按 story
     组织任务，去掉会破坏核心工作流）
-  - [Rn] 是 testing 扩展的规则追溯维度，标注该任务实现的 spec.md FR 段
-    规则编号（如 FR-001），支撑 gate 的 @Spec/@DisplayName 双向对齐校验
+  - [FR-xxx] 是 testing 扩展的规则追溯维度，标注该任务实现的 spec.md FR 段
+    规则编号（如 FR-001），支撑 gate 的规则对齐校验
 
   测试任务 MUST 参考 test-plan.md 用例清单生成（存在时）：
   - 单测任务引用 UT-xx 编号（如 "per test-plan.md UT-01..UT-03 (FR-001
     正常/异常/边界)"），用例数量与 test-plan.md 对齐（每条 SpecRule 至少 3 条
     单测：正常/异常/边界），不得臆造用例数量
-  - 契约测试任务引用 CT-xx 编号（每个 Contract 至少 1 正向 + 每错误码 1 反向）
-  - test-plan.md 缺失时（未运行 speckit.testing.plan）：按 contracts/（契约
-    测试）与 spec.md FR 段（单测）推导测试任务，并在生成的 tasks.md 顶部
-    注明"未参考 test-plan.md（未运行 speckit.testing.plan）"
+  - test-plan.md 缺失时（未运行 speckit.testing.plan）：按 contracts/ 与
+    spec.md FR 段推导测试任务，并在生成的 tasks.md 顶部注明"未参考
+    test-plan.md（未运行 speckit.testing.plan）"
   ============================================================================
   -->
 
@@ -109,7 +108,8 @@ Examples of foundational tasks (adjust based on your project):
 ### Tests for User Story 1 (REQUIRED - TDD) ⚠️
 
 > **MANDATORY: Write these tests FIRST, ensure they FAIL (Red) before ANY implementation task (Green).** Do not skip this subsection.
-> 测试任务数量与内容以 test-plan.md 用例清单为准（存在时）：单测按 UT-xx（每规则至少 3 条），契约测试按 CT-xx（每错误码 1 条）；下方为样板，生成时按实际用例展开。
+> 测试任务数量与内容以 test-plan.md 用例清单为准（存在时）：单测按 UT-xx（每规则至少 3 条：正常/异常/边界）；下方为样板，生成时按实际用例展开。
+> 规则标注双通道：JUnit5 `@DisplayName("FR-xxx-Rm-<描述>")`；JUnit4 测试方法级 `@Spec(rule="FR-xxx")`。
 
 > **Red evidence -- ALL 3 MUST hold（Red 判定三条件，命令级硬规则）**：
 > ① `mvn test-compile` EXIT=0（骨架接口与测试签名一致）；
@@ -120,23 +120,18 @@ Examples of foundational tasks (adjust based on your project):
 > **禁止**：用 `mvn compile`（仅 main）或 `mvn test-compile` 通过汇报 Red；
 > 禁止在编译失败时陈述"断言失败"（编译失败时断言未运行）。
 
-> **单测质量基线**：单测须**独立**（禁 test 间互相调用、禁共享可变状态/依赖
-> 执行次序）；命名规范（类=被测类+Test、方法=testXxx_状态、包名与被测类
-> 一致）——详见 speckit.testing.plan 3.2 全条目。
-
-- [ ] T015 [P] [US1] [FR-001] Unit test per test-plan.md UT-xx for [user journey] in src/test/java/{{package}}/unit/[Service]Test.java (JUnit5 + Mockito, @DisplayName("FR-xxx-Rm-<描述>"))
-- [ ] T016 [P] [US1] [FR-001] Contract test per test-plan.md CT-xx for [endpoint] in src/test/java/{{package}}/contract/[Contract]ContractTest.java (WireMock, @DisplayName("FR-xxx-Rm-<描述>"))
+- [ ] T015 [P] [US1] [FR-001] Unit test per test-plan.md UT-xx for [user journey] in src/test/java/{{package}}/unit/[Service]Test.java (JUnit4/5 + Mockito, 规则标注 @DisplayName 或测试方法级 @Spec)
 
 ### Implementation for User Story 1
 
 > These tasks MUST come AFTER the test tasks above (Red-Green order).
 
-- [ ] T017 [P] [US1] [FR-001] Create [Entity1] model in src/main/java/{{package}}/model/[Entity1].java
-- [ ] T018 [P] [US1] [FR-001] Create [Entity2] model in src/main/java/{{package}}/model/[Entity2].java
-- [ ] T019 [US1] [FR-001] Implement [Service] in src/main/java/{{package}}/service/[Service].java (depends on T017, T018)
-- [ ] T020 [US1] [FR-001] Implement [endpoint/feature] in src/main/java/{{package}}/[location]/[File].java
-- [ ] T021 [US1] [FR-001] Add validation and error handling
-- [ ] T022 [US1] [FR-001] Add logging for user story 1 operations
+- [ ] T016 [P] [US1] [FR-001] Create [Entity1] model in src/main/java/{{package}}/model/[Entity1].java
+- [ ] T017 [P] [US1] [FR-001] Create [Entity2] model in src/main/java/{{package}}/model/[Entity2].java
+- [ ] T018 [US1] [FR-001] Implement [Service] in src/main/java/{{package}}/service/[Service].java (depends on T016, T017)
+- [ ] T019 [US1] [FR-001] Implement [endpoint/feature] in src/main/java/{{package}}/[location]/[File].java
+- [ ] T020 [US1] [FR-001] Add validation and error handling
+- [ ] T021 [US1] [FR-001] Add logging for user story 1 operations
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
 
@@ -151,28 +146,19 @@ Examples of foundational tasks (adjust based on your project):
 ### Tests for User Story 2 (REQUIRED - TDD) ⚠️
 
 > **MANDATORY: Write these tests FIRST, ensure they FAIL (Red) before implementation.**
-> 按 test-plan.md UT-xx / CT-xx 用例清单生成，缺失时按 contracts/ + rules 推导。
+> 按 test-plan.md UT-xx 用例清单生成，缺失时按 contracts/ + spec.md FR 段推导。
+> Red 判定三条件同 User Story 1（① test-compile EXIT=0 ② 断言失败特征 ③ 编译错误不是 Red）。
 
-> **Red evidence -- ALL 3 MUST hold（Red 判定三条件，命令级硬规则）**：
-> ① `mvn test-compile` EXIT=0（骨架接口与测试签名一致）；
-> ② `mvn test -Dtest=<XxxTest>` 输出含断言失败特征（`Failures: N>0` 或
->    `AssertionFailedError` / `expected: ... but was: ...`）；
-> ③ 编译错误（COMPILATION ERROR / cannot find symbol）**不是 Red**——骨架未
->    完成，回补骨架后再验 ①+②。
-> **禁止**：用 `mvn compile`（仅 main）或 `mvn test-compile` 通过汇报 Red；
-> 禁止在编译失败时陈述"断言失败"（编译失败时断言未运行）。
-
-- [ ] T023 [P] [US2] [FR-002] Unit test per test-plan.md UT-xx for [user journey] in src/test/java/{{package}}/unit/[Service]Test.java (JUnit5 + Mockito, @DisplayName("FR-xxx-Rm-<描述>"))
-- [ ] T024 [P] [US2] [FR-002] Contract test per test-plan.md CT-xx for [endpoint] in src/test/java/{{package}}/contract/[Contract]ContractTest.java (WireMock, @DisplayName("FR-xxx-Rm-<描述>"))
+- [ ] T022 [P] [US2] [FR-002] Unit test per test-plan.md UT-xx for [user journey] in src/test/java/{{package}}/unit/[Service]Test.java (JUnit4/5 + Mockito, 规则标注 @DisplayName 或测试方法级 @Spec)
 
 ### Implementation for User Story 2
 
 > These tasks MUST come AFTER the test tasks above (Red-Green order).
 
-- [ ] T025 [P] [US2] [FR-002] Create [Entity] model in src/main/java/{{package}}/model/[Entity].java
-- [ ] T026 [US2] [FR-002] Implement [Service] in src/main/java/{{package}}/service/[Service].java
-- [ ] T027 [US2] [FR-002] Implement [endpoint/feature] in src/main/java/{{package}}/[location]/[File].java
-- [ ] T028 [US2] [FR-002] Integrate with User Story 1 components (if needed)
+- [ ] T023 [P] [US2] [FR-002] Create [Entity] model in src/main/java/{{package}}/model/[Entity].java
+- [ ] T024 [US2] [FR-002] Implement [Service] in src/main/java/{{package}}/service/[Service].java
+- [ ] T025 [US2] [FR-002] Implement [endpoint/feature] in src/main/java/{{package}}/[location]/[File].java
+- [ ] T026 [US2] [FR-002] Integrate with User Story 1 components (if needed)
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently
 
@@ -187,59 +173,24 @@ Examples of foundational tasks (adjust based on your project):
 ### Tests for User Story 3 (REQUIRED - TDD) ⚠️
 
 > **MANDATORY: Write these tests FIRST, ensure they FAIL (Red) before implementation.**
-> 按 test-plan.md UT-xx / CT-xx 用例清单生成，缺失时按 contracts/ + rules 推导。
+> 按 test-plan.md UT-xx 用例清单生成，缺失时按 contracts/ + spec.md FR 段推导。
+> Red 判定三条件同 User Story 1。
 
-> **Red evidence -- ALL 3 MUST hold（Red 判定三条件，命令级硬规则）**：
-> ① `mvn test-compile` EXIT=0（骨架接口与测试签名一致）；
-> ② `mvn test -Dtest=<XxxTest>` 输出含断言失败特征（`Failures: N>0` 或
->    `AssertionFailedError` / `expected: ... but was: ...`）；
-> ③ 编译错误（COMPILATION ERROR / cannot find symbol）**不是 Red**——骨架未
->    完成，回补骨架后再验 ①+②。
-> **禁止**：用 `mvn compile`（仅 main）或 `mvn test-compile` 通过汇报 Red；
-> 禁止在编译失败时陈述"断言失败"（编译失败时断言未运行）。
-
-- [ ] T029 [P] [US3] [FR-003] Unit test per test-plan.md UT-xx for [user journey] in src/test/java/{{package}}/unit/[Service]Test.java (JUnit5 + Mockito, @DisplayName("FR-xxx-Rm-<描述>"))
-- [ ] T030 [P] [US3] [FR-003] Contract test per test-plan.md CT-xx for [endpoint] in src/test/java/{{package}}/contract/[Contract]ContractTest.java (WireMock, @DisplayName("FR-xxx-Rm-<描述>"))
+- [ ] T027 [P] [US3] [FR-003] Unit test per test-plan.md UT-xx for [user journey] in src/test/java/{{package}}/unit/[Service]Test.java (JUnit4/5 + Mockito, 规则标注 @DisplayName 或测试方法级 @Spec)
 
 ### Implementation for User Story 3
 
 > These tasks MUST come AFTER the test tasks above (Red-Green order).
 
-- [ ] T031 [P] [US3] [FR-003] Create [Entity] model in src/main/java/{{package}}/model/[Entity].java
-- [ ] T032 [US3] [FR-003] Implement [Service] in src/main/java/{{package}}/service/[Service].java
-- [ ] T033 [US3] [FR-003] Implement [endpoint/feature] in src/main/java/{{package}}/[location]/[File].java
+- [ ] T028 [P] [US3] [FR-003] Create [Entity] model in src/main/java/{{package}}/model/[Entity].java
+- [ ] T029 [US3] [FR-003] Implement [Service] in src/main/java/{{package}}/service/[Service].java
+- [ ] T030 [US3] [FR-003] Implement [endpoint/feature] in src/main/java/{{package}}/[location]/[File].java
 
 **Checkpoint**: All user stories should now be independently functional
 
 ---
 
 [Add more user story phases as needed, following the same pattern: Tests (REQUIRED, first) -> Implementation (after)]
-
----
-
-## Phase N: Frontend Tasks（前端任务区 -- 可选，仅当涉及前端 .vue/.js/.ts 且团队决定实施前端测试时）
-
-**Purpose**: 前端测试为**可选**（OPTIONAL，默认不生成，不做不 FAIL——gate 只
-校验后端单测/契约测试）。如选择实施，测试任务与实现任务同区保留，双标签
-[USx] [Rn] 保留
-
-### Tests for Frontend (OPTIONAL - 如选择实施) ⚠️
-
-> 组件测试用 **vitest**（+ @vue/test-utils + happy-dom，`describe("FR-xxx-Rm-<描述>")`
-> 对齐 spec.md FR 段规则编号——@Spec 仅限 Java，前端用命名规范对齐）。
-> e2e MUST **确定性**（stub 外部不确定依赖——HTTP API / WS 推送 / 第三方
-> 接口按项目实际拦截注入固定数据，禁真实调用）；真实链路 e2e 仅手工/定时
-> 慢跑，**不进门禁**。
-
-- [ ] TXXX [P] [USx] [Rn] Component test for [Component].vue in frontend/src/.../__tests__/[Component].spec.js (vitest, describe("FR-xxx-Rm-<描述>"))
-- [ ] TXXX [P] [USx] [Rn] Unit test for [api].js (HTTP/WS 请求与错误处理) in frontend/src/.../__tests__/[api].spec.js (vitest)
-- [ ] TXXX [USx] [Rn] Deterministic e2e for [e2e case id] in frontend/e2e/[Name].spec.js (stub HTTP API 固定 JSON；有 WS/第三方再扩展注入, covered_rules: FR-xxx)
-
-### Implementation for Frontend
-
-> These tasks MUST come AFTER the frontend test tasks above (Red-Green order).
-
-- [ ] TXXX [P] [USx] [Rn] Implement [Component].vue / [api].js in frontend/src/...
 
 ---
 
@@ -277,8 +228,6 @@ Examples of foundational tasks (adjust based on your project):
 
 - Skeletons (Phase 2) MUST pass `mvn test-compile` (EXIT=0) before any test tasks (TDD's Red = assertion failure per the 3 conditions, not compile failure)
 - Unit tests MUST be written and confirmed to FAIL before implementation (Red phase)
-- Unit test tasks MUST be ordered before contract test tasks (单测先行)
-- Contract test tasks MUST be ordered before implementation tasks
 - Models before services
 - Services before endpoints
 - Core implementation before integration
@@ -292,22 +241,6 @@ Examples of foundational tasks (adjust based on your project):
 - All tests for a user story marked [P] can run in parallel
 - Models within a story marked [P] can run in parallel
 - Different user stories can be worked on in parallel by different team members
-
----
-
-## Parallel Example: User Story 1
-
-```bash
-# Launch all unit tests for User Story 1 together (MUST complete before contract tests):
-Task: "Unit test for [user journey] in src/test/java/{{package}}/unit/[Service]Test.java"
-
-# After unit tests FAIL (Red), launch contract tests:
-Task: "Contract test for [endpoint] in src/test/java/{{package}}/contract/[Name]ContractTest.java"
-
-# After all tests FAIL (Red), launch implementation:
-Task: "Create [Entity1] model in src/main/java/{{package}}/model/[Entity1].java"
-Task: "Create [Entity2] model in src/main/java/{{package}}/model/[Entity2].java"
-```
 
 ---
 
@@ -329,17 +262,6 @@ Task: "Create [Entity2] model in src/main/java/{{package}}/model/[Entity2].java"
 4. Add User Story 3 (TDD) -> Test independently -> Deploy/Demo
 5. Each story adds value without breaking previous stories
 
-### Parallel Team Strategy
-
-With multiple developers:
-
-1. Team completes Setup + Foundational together
-2. Once Foundational is done:
-   - Developer A: User Story 1
-   - Developer B: User Story 2
-   - Developer C: User Story 3
-3. Stories complete and integrate independently (each follows TDD: tests first)
-
 ---
 
 ## Notes
@@ -347,7 +269,7 @@ With multiple developers:
 - [P] tasks = different files, no dependencies
 - [Story] label maps task to specific user story for traceability
 - Each user story should be independently completable and testable
-- **Tests are REQUIRED (testing-tdd preset): 单测先行 -- verify unit tests FAIL before contract tests, contract tests before implementation**
+- **Tests are REQUIRED (testing-tdd preset): 单测先行 -- verify unit tests FAIL (Red) before implementation**
 - **Skeletons (Phase 2) MUST pass `mvn test-compile`（EXIT=0）before any test task -- TDD's Red = Red 判定三条件（断言失败特征），编译错误不是 Red**
 - Commit after each task or logical group
 - Stop at any checkpoint to validate story independently

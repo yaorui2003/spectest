@@ -39,6 +39,22 @@ def _run_py(spec_path: Path) -> dict:
     return json.loads(result.stdout)
 
 
+def _run_py_with_test_source(spec_path: Path, test_source: Path) -> dict:
+    """带 --test-source 调用 validate（v0.66 6.2 子编号连续性校验）。"""
+    result = subprocess.run(
+        [sys.executable, str(PY_SCRIPT),
+         "--spec", str(spec_path),
+         "--test-source", str(test_source),
+         "--json"],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 0, (
+        f"validate_spec_format 退出码 {result.returncode}\n"
+        f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+    return json.loads(result.stdout)
+
+
 def _write_spec(tmp_path: Path, content: str) -> Path:
     spec = tmp_path / "spec.md"
     spec.write_text(content, encoding="utf-8")
@@ -177,3 +193,103 @@ def test_without_error_code_definitions(tmp_path: Path):
     assert data["valid"] is True
     assert any("Error Code Definitions" in w for w in data["warnings"])
     assert data["error_codes_found"] == []
+
+
+# ── v0.66: FR 段规则源（### Functional Requirements，FR-001 顶层锚）──────────
+
+
+def test_valid_fr_section_sequential(tmp_path: Path):
+    """v0.66 6.2: spec.md 含 ### Functional Requirements 段 + 连续 FR-001..FR-003
+    -> valid=true，rule_source=fr-section（无 Business Rules 段）。"""
+    spec = _write_spec(tmp_path, """\
+# Feature
+
+### Functional Requirements
+
+- **FR-001**: System MUST validate amount > 0
+- **FR-002**: System MUST check sufficient balance
+- **FR-003**: System MUST reject frozen account
+
+## API
+
+POST /api/v1/transfer
+""")
+    data = _run_py(spec)
+    assert data["valid"] is True
+    assert data["rule_source"] == "fr-section"
+    assert data["rules_found"] == ["FR-001", "FR-002", "FR-003"]
+    assert data["errors"] == []
+
+
+def test_fr_section_numbering_gap(tmp_path: Path):
+    """v0.66: FR 段编号断裂（FR-001, FR-003 缺 FR-002）-> valid=false，errors 含 FR-002。"""
+    spec = _write_spec(tmp_path, """\
+# Feature
+
+### Functional Requirements
+
+- **FR-001**: validate amount
+- **FR-003**: reject frozen account
+""")
+    data = _run_py(spec)
+    assert data["valid"] is False
+    assert data["rule_source"] == "fr-section"
+    assert any("FR-002" in e for e in data["errors"])
+
+
+def test_rule_source_business_rules_fallback(tmp_path: Path):
+    """v0.66: FR 段缺失 + Business Rules 段存在 -> rule_source=business-rules（老项目回落）。"""
+    spec = _write_spec(tmp_path, """\
+# Feature
+
+## Business Rules
+
+- R1: 金额校验
+- R2: 余额校验
+""")
+    data = _run_py(spec)
+    assert data["valid"] is True
+    assert data["rule_source"] == "business-rules"
+    assert data["rules_found"] == ["R1", "R2"]
+
+
+def test_no_rule_source_is_error(tmp_path: Path):
+    """v0.66: FR 段与 Business Rules 段皆无 -> valid=false，rule_source=none。"""
+    spec = _write_spec(tmp_path, """\
+# Feature
+
+## API
+
+POST /api/v1/transfer
+""")
+    data = _run_py(spec)
+    assert data["valid"] is False
+    assert data["rule_source"] == "none"
+    assert any("Functional Requirements" in e or "Business Rules" in e
+               for e in data["errors"])
+
+
+def test_displayname_subscene_numbering_gap_warns(tmp_path: Path):
+    """v0.66 6.2: --test-source 下 FR-001 子编号断裂（R1, R3 缺 R2）-> WARN 不 FAIL。"""
+    spec = _write_spec(tmp_path, """\
+# Feature
+
+### Functional Requirements
+
+- **FR-001**: validate amount
+""")
+    test_dir = tmp_path / "test-src"
+    test_dir.mkdir()
+    (test_dir / "AccountServiceTest.java").write_text(
+        "import org.junit.jupiter.api.DisplayName;\n"
+        "class AccountServiceTest {\n"
+        '    @DisplayName("FR-001-R1-x")\n'
+        '    @DisplayName("FR-001-R3-x")\n'
+        "}\n",
+        encoding="utf-8",
+    )
+
+    data = _run_py_with_test_source(spec, test_dir)
+    # 子编号断裂只 WARN，不影响 valid
+    assert data["valid"] is True
+    assert any("FR-001" in w and "R2" in w for w in data["warnings"]), data["warnings"]

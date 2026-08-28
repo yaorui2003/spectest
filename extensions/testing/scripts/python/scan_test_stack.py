@@ -2,7 +2,8 @@
 """测试技术栈扫描脚本（Python 版）。
 
 递归扫描测试源码目录中的 ``.java`` 文件，检查禁止使用的技术
-（PowerMock 导入、@SpringBootTest 注解），输出发现清单 JSON。
+（PowerMock 导入、@SpringBootTest 起容器、@Autowired 依赖注入），
+输出发现清单 JSON。
 
 用法::
 
@@ -37,6 +38,13 @@ def scan(source_dir: Path) -> dict:
             if "@SpringBootTest" in line:
                 findings.append({
                     "type": "springboottest",
+                    "file": str(java_file),
+                    "line": i + 1,
+                    "detail": line.strip(),
+                })
+            if "@Autowired" in line:
+                findings.append({
+                    "type": "autowired",
                     "file": str(java_file),
                     "line": i + 1,
                     "detail": line.strip(),

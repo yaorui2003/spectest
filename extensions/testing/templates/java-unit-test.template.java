@@ -1,10 +1,13 @@
 /**
- * JUnit5 + Mockito 单测参考骨架（speckit.testing 提供）。占位符 {{var}} 由 AI 填充。
+ * 单测参考骨架（speckit.testing 提供）。占位符 {{var}} 由 AI 填充。
  *
- * 约定（MUST）：每条规则的单测标 @DisplayName("{{rule_id}}-{{description}}")，rule_id = 顶层锚 FR-xxx
- * 的子编号（如 FR-001-R1），与代码侧 @Spec(rule="FR-001") 按 FR 前缀双向对齐（@Spec 永远只写
- * 顶层锚 FR-xxx，R 子编号仅测试侧使用）；断言业务语义（错误码/状态变更），禁弱断言（仅 assertNotNull）；
- * 外部依赖 Mock。技术栈见宪法 Principle III。
+ * 约定（MUST）：规则标注双通道（与 JUnit 版本无关）——
+ *  JUnit5：@DisplayName("{{rule_id}}-{{description}}")，rule_id = 顶层锚 FR-xxx
+ *          的子编号（如 FR-001-R1）；
+ *  JUnit4：测试方法上标 @Spec(rule="FR-001", description="<场景>")，
+ *          @Spec 为 spec-kit 自定义注解（SOURCE，静态扫描），JUnit4 项目同样可用；
+ * 断言业务语义（错误码/状态变更/副作用 verify），禁弱断言（仅 assertNotNull）；
+ * 外部依赖 Mock，禁 @Autowired / @SpringBootTest 起容器。技术栈见宪法 Principle III。
  */
 package {{package}};
 
@@ -21,7 +24,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * {{service_class}} 单元测试。@DisplayName 标子场景编号（FR-xxx-Rm）以便门禁按 FR 前缀扫描对齐。
+ * {{service_class}} 单元测试。JUnit5 模板；JUnit4 项目改为：
+ *   import org.junit.Test; import org.junit.runner.RunWith;
+ *   import org.mockito.junit.MockitoJUnitRunner;
+ *   @RunWith(MockitoJUnitRunner.class) + @Test + 方法上 @Spec(rule="FR-xxx")。
  */
 @ExtendWith(MockitoExtension.class)
 class {{service_class}}Test {

@@ -13,8 +13,9 @@ import java.lang.annotation.Target;
  *
  * <ul>
  *   <li>{@code capability}：对应 spec.md 的 capability 名，非空。
- *   <li>{@code rule}：规则编号，格式 {@code ^R\d+$}（如 {@code R1}），必须匹配
- *       spec.md business_rules 规则编号。
+ *   <li>{@code rule}：规则编号，格式 {@code ^FR-\d+$}（如 {@code FR-001}）——
+ *       顶层锚，永不携带 {@code -R} 子编号，必须严格匹配 spec.md
+ *       {@code ### Functional Requirements} 段的 FR 编号（保留前导零）。
  *   <li>{@code description}：规则实现说明，自由文本，默认空串。
  * </ul>
  *
@@ -26,10 +27,10 @@ import java.lang.annotation.Target;
  *
  * <p>使用示例：
  * <pre>{@code
- * @Spec(capability = "transfer", rule = "R1", description = "金额校验")
- * @Spec(capability = "transfer", rule = "R7", description = "自转账校验")
+ * @Spec(capability = "transfer", rule = "FR-001", description = "金额校验")
  * public TransferResult transfer(String from, String to, BigDecimal amount) {
- *     // ...
+ *     // @Spec 永远只写顶层锚 FR-xxx；测试侧子场景编号由
+ *     // @DisplayName（JUnit5）或测试方法级 @Spec（JUnit4）标注
  * }
  * }</pre>
  */
@@ -41,7 +42,7 @@ public @interface Spec {
     /** 对应 spec.md 的 capability 名，非空。 */
     String capability();
 
-    /** 规则编号，格式 {@code ^R\d+$}（如 {@code R1}）。 */
+    /** 规则编号，顶层锚格式 {@code ^FR-\d+$}（如 {@code FR-001}），永不携带子编号。 */
     String rule();
 
     /** 规则实现说明，自由文本，默认空串。 */

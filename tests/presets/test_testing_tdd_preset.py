@@ -21,7 +21,7 @@ def test_preset_manifest_valid():
         m = yaml.safe_load(f)
     assert m["schema_version"] == "1.0"
     assert m["preset"]["id"] == "testing-tdd"
-    assert m["preset"]["version"] == "1.4.0"
+    assert m["preset"]["version"] == "1.5.0"
     assert m["requires"]["speckit_version"] == ">=0.14.4"
 
 
@@ -63,17 +63,16 @@ def test_tasks_template_uses_replace_strategy():
     assert tasks_entry["strategy"] == "replace"
 
 
-def test_tasks_template_enforces_required_backend_optional_frontend():
+def test_tasks_template_enforces_required_tests_only():
     f = PRESET_DIR / "templates" / "tasks-template.md"
     assert f.is_file()
     content = f.read_text(encoding="utf-8")
-    # 后端测试强制 REQUIRED（NON-NEGOTIABLE，v0.4.x 消灭"Tests are OPTIONAL"矛盾）
+    # 单测强制 REQUIRED（NON-NEGOTIABLE，v0.4.x 消灭"Tests are OPTIONAL"矛盾）
     assert "REQUIRED" in content
     assert "NON-NEGOTIABLE" in content
-    # 前端任务区可选（v0.7 可选化）：OPTIONAL 仅允许出现在前端任务区之后
-    frontend_pos = content.index("Frontend Tasks")
-    assert "OPTIONAL" not in content[:frontend_pos]
-    assert "OPTIONAL" in content[frontend_pos:]
+    # v1.5：已删除前端任务区与契约测试，不应出现相关词
+    assert "Frontend Tasks" not in content
+    assert "Contract test" not in content and "契约" not in content
     # 测试任务前置（TDD）
     assert "TDD" in content or "test task" in content.lower()
     # replace 不需要 wrap 的 {CORE_TEMPLATE} 占位符
@@ -119,12 +118,11 @@ def test_implement_command_enforces_spec_annotation():
 
 def test_tasks_template_references_test_plan():
     """tasks 生成测试任务 MUST 参考 test-plan.md 用例清单（存在时），
-    缺失降级为 contracts/ + business_rules 推导。"""
+    缺失降级为 contracts/ + spec.md FR 段推导（v1.5：仅单测 UT-xx）。"""
     f = PRESET_DIR / "templates" / "tasks-template.md"
     content = f.read_text(encoding="utf-8")
     assert "test-plan.md" in content
     assert "UT-xx" in content
-    assert "CT-xx" in content
 
 
 def test_implement_command_references_test_plan():
@@ -159,9 +157,9 @@ def test_bundle_references_extension_and_preset():
     preset_ids = {p["id"] for p in b["provides"]["presets"]}
     assert "testing" in ext_ids
     assert "testing-tdd" in preset_ids
-    # v0.6：bundle 版本号与 extension/preset 对齐 1.4.0（v0.6 完整版落地）
-    assert b["bundle"]["version"] == "1.4.0"
+    # v1.5：bundle 版本号与 extension/preset 对齐 1.5.0
+    assert b["bundle"]["version"] == "1.5.0"
     ext_versions = {e["version"] for e in b["provides"]["extensions"]}
     preset_versions = {p["version"] for p in b["provides"]["presets"]}
-    assert "1.4.0" in ext_versions
-    assert "1.4.0" in preset_versions
+    assert "1.5.0" in ext_versions
+    assert "1.5.0" in preset_versions

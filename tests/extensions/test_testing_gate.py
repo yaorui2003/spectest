@@ -130,17 +130,17 @@ class TestGateArtifactPath:
 
 
 class TestGateFourChecks:
-    """contracts/commands.md command 3 processing logic enumerates four
-    checks the gate must perform."""
+    """contracts/commands.md command 3 processing logic enumerates the
+    checks the gate must perform (v1.5: 仅单测，无契约测试)。"""
 
     BODY_MARKERS = [
-        # unit-test execution (mvn test + JaCoCo)
-        "mvn test",
-        # contract-test execution
-        "契约测试",
+        # unit-test execution (mvn clean test + JaCoCo)
+        "mvn clean test",
+        # tech-stack hard validation
+        "@Autowired",
         # @Spec annotation scanning
         "@Spec",
-        # DisplayName consistency check
+        # test-rule alignment (JUnit5 @DisplayName / JUnit4 测试方法级 @Spec)
         "@DisplayName",
     ]
 

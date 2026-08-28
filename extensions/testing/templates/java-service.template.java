@@ -1,8 +1,9 @@
 /**
  * Java Service 参考骨架（speckit.testing 提供）。占位符 {{var}} 由 AI 在 speckit.implement 阶段填充。
  *
- * 约定（MUST）：实现 spec.md `### Functional Requirements` 段的每个 public 方法标注 @Spec；rule 编号
- * =顶层锚 FR-xxx（如 FR-001），严格匹配 spec.md 的 FR 段；同一方法多规则用多条 @Spec（@Repeatable）。技术栈与禁用项见宪法 Principle III。
+ * 约定（MUST）：实现 spec.md `### Functional Requirements` 段的每个 public 方法
+ * 标注 @Spec；rule = 顶层锚 FR-xxx（如 FR-001），严格匹配 spec.md FR 段；同一方法
+ * 多规则用多条 @Spec（@Repeatable）。技术栈与禁用项见宪法 Principle III。
  */
 package {{package}};
 

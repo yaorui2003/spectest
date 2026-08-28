@@ -296,6 +296,128 @@ public class AccountService {
     assert data["coverage_percent"] == 100
 
 
+# ── 用例 (e): v0.66 FR 段规则源（### Functional Requirements，FR-001 顶层锚）──
+
+
+FR_RULES = ["FR-001", "FR-002", "FR-003"]
+
+FR_SPEC_MD = """\
+# Transfer
+
+### Functional Requirements
+
+- **FR-001**: System MUST validate amount > 0
+- **FR-002**: System MUST check sufficient balance
+- **FR-003**: System MUST reject transfer to frozen account
+
+## API
+
+POST /api/v1/accounts/transfer
+"""
+
+
+def _make_fr_java_source(rules: list[str]) -> str:
+    """生成使用 FR 顶层锚 @Spec（rule="FR-00x"）的样本 Java 源码。"""
+    lines = [
+        "package com.example;",
+        "",
+        "import com.speckit.testing.Spec;",
+        "",
+        "@org.springframework.stereotype.Service",
+        "public class AccountService {",
+        "",
+    ]
+    for rule in rules:
+        num = rule.split("-")[1]
+        lines.append(
+            f'    @Spec(capability = "transfer", rule = "{rule}", description = "校验{num}")'
+        )
+        lines.append(f"    public void m{rule}() {{")
+        lines.append("    }")
+        lines.append("")
+    lines.append("}")
+    return "\n".join(lines) + "\n"
+
+
+def test_scan_fr_section_rule_source(tmp_path: Path):
+    """v0.66 6.1: spec.md 含 ### Functional Requirements 段（无 Business Rules）
+    -> rule_source=fr-section，FR 顶层锚正常比对。"""
+    spec_path = tmp_path / "spec.md"
+    spec_path.write_text(FR_SPEC_MD, encoding="utf-8")
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "AccountService.java").write_text(
+        _make_fr_java_source(FR_RULES), encoding="utf-8"
+    )
+
+    _, data = _run_py(src_dir, spec_path)
+
+    assert data["rule_source"] == "fr-section"
+    assert data["spec_rules"] == FR_RULES
+    assert set(data["annotated_rules"].keys()) == set(FR_RULES)
+    assert data["unimplemented_rules"] == []
+    assert data["orphan_annotations"] == []
+    assert data["coverage_percent"] == 100
+
+
+def test_scan_fr_section_missing_and_subscene(tmp_path: Path):
+    """v0.66: FR 段漏 FR-002 -> unimplemented 含 FR-002；@Spec 误带 -R 子编号
+    -> 归一为顶层锚（FR-002-R1 归属 FR-002，不认子编号）。"""
+    spec_path = tmp_path / "spec.md"
+    spec_path.write_text(FR_SPEC_MD, encoding="utf-8")
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "AccountService.java").write_text(
+        _make_fr_java_source(FR_RULES).replace(
+            'rule = "FR-002", description = "校验002"',
+            'rule = "FR-002-R2", description = "校验002"',
+        ),
+        encoding="utf-8",
+    )
+
+    _, data = _run_py(src_dir, spec_path)
+
+    # FR-002-R2 归一为顶层锚 FR-002 -> 已注解；漏实现的应是刻意去掉的 FR-002？
+    # 此处 FR-002-R2 -> FR-002 仍算已实现，故 unimplemented 为空（FR-001/3 也在）
+    assert data["rule_source"] == "fr-section"
+    assert "FR-001" in data["annotated_rules"]
+    assert "FR-002" in data["annotated_rules"], "FR-002-R2 应归一为顶层锚 FR-002"
+    assert data["unimplemented_rules"] == []
+    assert data["coverage_percent"] == 100
+
+
+def test_scan_rule_source_business_rules_fallback(sample_project):
+    """v0.66: FR 段缺失但含 Business Rules 段 -> rule_source=business-rules（老项目回落）。"""
+    _, src_dir, spec_path = sample_project  # sample_project 自带 Business Rules spec
+    java_content = _make_java_source(ALL_RULES)
+    (src_dir / "AccountService.java").write_text(java_content, encoding="utf-8")
+
+    _, data = _run_py(src_dir, spec_path)
+
+    assert data["rule_source"] == "business-rules"
+    assert data["spec_rules"] == ALL_RULES
+    assert data["unimplemented_rules"] == []
+
+
+def test_scan_rule_source_none(tmp_path: Path):
+    """v0.66: FR 段与 Business Rules 段皆无 -> rule_source=none，spec_rules 空 ->
+    所有 @Spec 视为孤儿注解。"""
+    spec_path = tmp_path / "spec.md"
+    spec_path.write_text("# Transfer\n\n## API\n\nPOST /transfer\n", encoding="utf-8")
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "AccountService.java").write_text(
+        _make_fr_java_source(["FR-001"]), encoding="utf-8"
+    )
+
+    _, data = _run_py(src_dir, spec_path)
+
+    assert data["rule_source"] == "none"
+    assert data["spec_rules"] == []
+    orphan = [a["rule"] for a in data["orphan_annotations"]]
+    assert "FR-001" in orphan
+
+
 # ── 三语言等价性 ─────────────────────────────────────────────────────────
 
 

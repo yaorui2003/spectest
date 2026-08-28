@@ -105,8 +105,6 @@ gate:
     instruction_coverage_min: 85
     complexity_coverage_min: 70
     pass_rate_min: 100
-  contract_test:
-    pass_rate_min: 95
   spec_traceability:
     spec_rule_coverage_min: 100
     require_displayname_match: true
@@ -114,6 +112,7 @@ gate:
 test_stack:
   forbid_powermock: true
   forbid_springboottest: true
+  forbid_autowired: true
 
 risk_overrides:
   high:
@@ -122,8 +121,6 @@ risk_overrides:
       method_coverage_min: 90
       instruction_coverage_min: 90
       complexity_coverage_min: 80
-      pass_rate_min: 100
-    contract_test:
       pass_rate_min: 100
   medium:
     unit_test:
@@ -431,7 +428,7 @@ def test_json_output_has_all_contract_fields(gate_fixture):
     assert rc == 0
     for field in [
         "status", "mode", "gate_result_path", "risk_level", "mvn_clean_test",
-        "unit_tests", "contract_tests", "coverage", "spec_coverage",
+        "unit_tests", "coverage", "spec_coverage",
         "displayname_match", "adversarial_coverage", "threshold_results",
         "fail_reasons",
         # v0.6 契约字段（降级原因 / SOFT / unspec / diff coverage）
@@ -589,7 +586,6 @@ def _full_mode_inputs(fx: dict, **overrides) -> dict:
         "scan_stack": {"forbidden_findings": []},
         "parse_results": {
             "unit_tests": {"total": 7, "passed": 7, "failed": 0, "pass_rate": 100},
-            "contract_tests": {"total": 2, "passed": 2, "failed": 0, "pass_rate": 100},
             "coverage": {
                 "line_coverage": 95, "branch_coverage": 80,
                 "method_coverage": 92, "instruction_coverage": 90,
@@ -642,7 +638,7 @@ def test_run_full_mode_pass(gate_fixture):
     assert result["displayname_match"] == {"aligned": 8, "total": 8, "mismatch_count": 0, "untested_spec_rules": []}
     assert result["fail_reasons"] == []
 
-    # gate-result.md full 格式（含执行环境/单测明细/契约测试明细/Spec 矩阵/判定依据）
+    # gate-result.md full 格式（含执行环境/单测明细/Spec 矩阵/判定依据）
     md = (gate_fixture["docs_dir"] / "gate-result.md").read_text(encoding="utf-8")
     assert "## Gate Result: PASS" in md
     assert "- mvn clean test: SUCCESS" in md
@@ -1267,3 +1263,319 @@ def test_run_full_mode_unspec_codes_default_zero(gate_fixture):
     assert result["unspec_codes_count"] == 0
     md = (gate_fixture["docs_dir"] / "gate-result.md").read_text(encoding="utf-8")
     assert "漂移告警" not in md  # 空列表不写告警段
+
+
+# ── 用例 (m): v0.66 FR 段规则源（spec.md ### Functional Requirements，FR-001）─
+
+
+FR_RULES = [f"FR-{n:03d}" for n in range(1, 8)]
+FR_TO_METHOD = {f"FR-{n:03d}": RULE_TO_METHOD[f"R{n}"] for n in range(1, 8)}
+FR_TO_DESC = {f"FR-{n:03d}": RULE_TO_DESC[f"R{n}"] for n in range(1, 8)}
+
+FR_SPEC_MD = """\
+# Transfer
+
+### Functional Requirements
+
+- **FR-001**: System MUST validate amount > 0
+- **FR-002**: System MUST check sufficient balance
+- **FR-003**: System MUST reject frozen transfer
+- **FR-004**: System MUST enforce single transfer limit
+- **FR-005**: System MUST log audit trail
+- **FR-006**: System MUST commit atomically
+- **FR-007**: System MUST reject self transfer
+
+## API
+
+POST /api/v1/accounts/transfer
+"""
+
+FR_IMPACT_REPORT_MD = """\
+# ImpactReport
+
+### 影响范围
+- com.example.AccountService.transfer (FR-001)
+
+### 风险等级
+risk_level: high
+
+### 受影响规则编号清单
+affected_rules:
+  - rule: FR-001
+    change_type: modified
+    risk: high
+"""
+
+
+def _make_fr_java_source(rules: list[str]) -> str:
+    """FR 体系样本：@Spec(rule="FR-00x") 顶层锚。"""
+    lines = [
+        "package com.example;",
+        "",
+        "import java.math.BigDecimal;",
+        "import com.speckit.testing.Spec;",
+        "",
+        "@org.springframework.stereotype.Service",
+        "public class AccountService {",
+        "",
+    ]
+    for rule in rules:
+        desc = FR_TO_DESC[rule]
+        lines.append(
+            f'    @Spec(capability = "transfer", rule = "{rule}", description = "{desc}")'
+        )
+        lines.append(f"    public void {FR_TO_METHOD[rule]}() {{")
+        lines.append("    }")
+        lines.append("")
+    lines.append("}")
+    return "\n".join(lines) + "\n"
+
+
+def _make_fr_test_java(rules: list[str]) -> str:
+    """FR 体系样本测试：@DisplayName("FR-00x-R1-<描述>") 子场景编号。"""
+    lines = [
+        "package com.example;",
+        "",
+        "import org.junit.jupiter.api.Test;",
+        "import org.junit.jupiter.api.DisplayName;",
+        "",
+        "class AccountServiceTest {",
+        "",
+    ]
+    for rule in rules:
+        desc = FR_TO_DESC[rule]
+        lines.append("    @Test")
+        lines.append(f'    @DisplayName("{rule}-R1-{desc}")')
+        lines.append(f"    void test{rule.replace('-', 'R')}() {{")
+        lines.append("    }")
+        lines.append("")
+    lines.append("}")
+    return "\n".join(lines) + "\n"
+
+
+@pytest.fixture
+def fr_gate_fixture(tmp_path: Path) -> dict:
+    """FR 体系完整 fixture（与 gate_fixture 同构，仅规则编号换 FR-001 顶层锚）。
+
+    impact 受影响规则为 FR-001（high）；test-src 含 FR-001 对抗用例
+    @DisplayName("FR-001-R1-对抗-边界")，满足 critical_path_required。
+    """
+    spec_path = tmp_path / "spec.md"
+    spec_path.write_text(FR_SPEC_MD, encoding="utf-8")
+
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "AccountService.java").write_text(
+        _make_fr_java_source(FR_RULES), encoding="utf-8"
+    )
+
+    test_dir = tmp_path / "test-src"
+    test_dir.mkdir()
+    (test_dir / "AccountServiceTest.java").write_text(
+        _make_fr_test_java(FR_RULES), encoding="utf-8"
+    )
+    (test_dir / "AdversarialTest.java").write_text(
+        "package com.example;\n"
+        "import org.junit.jupiter.api.Test;\n"
+        "import org.junit.jupiter.api.DisplayName;\n"
+        "class AdversarialTest {\n"
+        "    @Test\n"
+        '    @DisplayName("FR-001-R1-对抗-边界")\n'
+        "    void testFR001Adversarial() {}\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    feature_dir = tmp_path / "specs" / "001-bank-transfer"
+    docs_dir = feature_dir / "docs"
+    docs_dir.mkdir(parents=True)
+    (docs_dir / "impact-report.md").write_text(FR_IMPACT_REPORT_MD, encoding="utf-8")
+
+    config_path = tmp_path / "testing-config.yml"
+    config_path.write_text(TESTING_CONFIG_YML, encoding="utf-8")
+
+    return {
+        "tmp_path": tmp_path,
+        "spec": spec_path,
+        "src": src_dir,
+        "test_src": test_dir,
+        "feature_dir": feature_dir,
+        "docs_dir": docs_dir,
+        "config": config_path,
+    }
+
+
+def test_degraded_fr_section_pass(fr_gate_fixture):
+    """v0.66 降级：FR 段 spec + FR-001 @Spec 全覆盖 -> PASS，rule_source=fr-section。"""
+    rc, data = _run_gate(fr_gate_fixture)
+    assert rc == 0, f"FAIL: {data['fail_reasons']}"
+    assert data["status"] == "PASS"
+    assert data["spec_coverage"]["rule_source"] == "fr-section"
+    assert set(data["spec_coverage"]["spec_rules"]) == set(FR_RULES)
+    assert data["spec_coverage"]["unimplemented_rules"] == []
+    assert data["spec_coverage"]["orphan_annotations"] == []
+
+
+def test_run_full_mode_fr_displayname_grouping(fr_gate_fixture):
+    """v0.66 6.3: FR-001-R1- 按前缀 FR 分组与 @Spec 顶层锚对齐 ->
+    displayname 7/7 对齐、无 mismatch、无 untested；影响规则 FR-001 解析为顶层锚；
+    FR-001-R1-对抗 计入 adversarial_counts；gate-result.md 输出规则来源行。"""
+    _make_full_mode_reports(fr_gate_fixture)
+    # _make_full_mode_reports 会重写 AdversarialTest.java 为 R1-对抗，重写回 FR 版
+    (fr_gate_fixture["test_src"] / "AdversarialTest.java").write_text(
+        "package com.example;\n"
+        "import org.junit.jupiter.api.Test;\n"
+        "import org.junit.jupiter.api.DisplayName;\n"
+        "class AdversarialTest {\n"
+        "    @Test\n"
+        '    @DisplayName("FR-001-R1-对抗-边界")\n'
+        "    void testFR001Adversarial() {}\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    rg = _load_run_gate_module()
+    result = rg.run(_full_mode_inputs(fr_gate_fixture))
+
+    assert result["status"] == "PASS", result["fail_reasons"]
+
+    # 规则来源：FR 段
+    assert result["spec_coverage"]["rule_source"] == "fr-section"
+    assert result["spec_coverage"]["spec_rules"] == FR_RULES
+
+    # DisplayName 前缀分组对齐：7 条 FR-xxx-R1- 全部归属对应 FR 顶层锚
+    # + 1 条对抗 FR-001-R1-对抗 = total 8 全对齐
+    dm = result["displayname_match"]
+    assert dm["aligned"] == 8 and dm["total"] == 8, dm
+    assert dm["mismatch_count"] == 0
+    assert dm["untested_spec_rules"] == []
+
+    # 影响规则解析顶层锚 FR-001 + 对抗按 FR 前缀分组
+    adv = result["adversarial_coverage"]
+    assert adv["high_risk_rules"] == ["FR-001"]
+    assert adv["adversarial_counts"].get("FR-001") == 1
+    assert adv["missing"] == []
+
+    # gate-result.md：规则来源行 + DisplayName 对齐行
+    md = (fr_gate_fixture["docs_dir"] / "gate-result.md").read_text(encoding="utf-8")
+    assert "### Spec 规则覆盖矩阵" in md
+    assert "规则来源: fr-section" in md
+    assert "DisplayName 对齐数: 8 / 8" in md
+
+
+def test_run_full_mode_fr_displayname_mismatch(fr_gate_fixture):
+    """v0.66 6.3: @DisplayName 指向不存在的 FR 顶层锚 -> mismatch -> FAIL。"""
+    _make_full_mode_reports(fr_gate_fixture)
+    # _make_full_mode_reports 重写 AdversarialTest 为 R1-对抗，改回 FR 版避免额外 mismatch
+    (fr_gate_fixture["test_src"] / "AdversarialTest.java").write_text(
+        "package com.example;\n"
+        "import org.junit.jupiter.api.Test;\n"
+        "import org.junit.jupiter.api.DisplayName;\n"
+        "class AdversarialTest {\n"
+        "    @Test\n"
+        '    @DisplayName("FR-001-R1-对抗-边界")\n'
+        "    void testFR001Adversarial() {}\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (fr_gate_fixture["test_src"] / "AccountServiceTest.java").write_text(
+        _make_fr_test_java(FR_RULES).replace(
+            '@DisplayName("FR-001-R1-金额校验")',
+            '@DisplayName("FR-099-R1-孤儿场景")',
+        ),
+        encoding="utf-8",
+    )
+    rg = _load_run_gate_module()
+    result = rg.run(_full_mode_inputs(fr_gate_fixture))
+
+    assert result["status"] == "FAIL"
+    assert result["displayname_match"]["mismatch_count"] == 1
+    assert any("displayname_mismatch" in r for r in result["fail_reasons"])
+
+# ── v1.5: JUnit4 双通道（测试方法级 @Spec）+ @Autowired 扫描 ──────────────────
+
+
+def _make_fr_junit4_test_java(rules: list[str]) -> str:
+    """JUnit4 通道样本：测试方法上标 @Spec（与 JUnit 版本无关，静态扫描）。"""
+    lines = [
+        "package com.example;",
+        "",
+        "import org.junit.Test;",
+        "import com.speckit.testing.Spec;",
+        "",
+        "public class AccountServiceTest {",
+        "",
+    ]
+    for rule in rules:
+        desc = FR_TO_DESC[rule]
+        lines.append("    @Test")
+        lines.append(
+            f'    @Spec(capability = "transfer", rule = "{rule}", description = "{desc}")'
+        )
+        lines.append(f"    public void test{rule.replace('-', 'R')}() {{")
+        lines.append("    }")
+        lines.append("")
+    lines.append("}")
+    return "\n".join(lines) + "\n"
+
+
+def test_run_full_mode_junit4_spec_channel(fr_gate_fixture):
+    """v1.5 JUnit4 双通道：测试方法级 @Spec(rule="FR-xxx") 视为对齐信号
+    （@Spec 为自定义注解与 JUnit 版本无关），7 条全部对齐 -> PASS。"""
+    _make_full_mode_reports(fr_gate_fixture)
+    # 替换测试源码为 JUnit4 通道版本（无 @DisplayName）
+    (fr_gate_fixture["test_src"] / "AccountServiceTest.java").write_text(
+        _make_fr_junit4_test_java(FR_RULES), encoding="utf-8"
+    )
+    # 对抗用例也走 JUnit4 通道：@Spec(rule="FR-001", description="对抗-...")
+    (fr_gate_fixture["test_src"] / "AdversarialTest.java").write_text(
+        "package com.example;\n"
+        "import org.junit.Test;\n"
+        "import com.speckit.testing.Spec;\n"
+        "public class AdversarialTest {\n"
+        "    @Test\n"
+        '    @Spec(capability = "transfer", rule = "FR-001", description = "对抗-边界")\n'
+        "    public void testFR001Adversarial() {}\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    rg = _load_run_gate_module()
+    result = rg.run(_full_mode_inputs(fr_gate_fixture))
+
+    assert result["status"] == "PASS", result["fail_reasons"]
+    dm = result["displayname_match"]
+    assert dm["aligned"] == 8 and dm["total"] == 8, dm
+    assert dm["mismatch_count"] == 0
+    assert dm["untested_spec_rules"] == []
+    # JUnit4 通道对抗识别：FR-001 description 含"对抗"
+    adv = result["adversarial_coverage"]
+    assert adv["adversarial_counts"].get("FR-001") == 1
+    assert adv["missing"] == []
+
+
+def test_run_full_mode_junit4_spec_orphan_fail(fr_gate_fixture):
+    """v1.5 JUnit4 通道反向约束：测试方法级 @Spec 指向不存在的规则 -> mismatch -> FAIL。"""
+    _make_full_mode_reports(fr_gate_fixture)
+    (fr_gate_fixture["test_src"] / "AccountServiceTest.java").write_text(
+        _make_fr_junit4_test_java(FR_RULES).replace(
+            'rule = "FR-001"',
+            'rule = "FR-099"',
+        ),
+        encoding="utf-8",
+    )
+    (fr_gate_fixture["test_src"] / "AdversarialTest.java").write_text(
+        "package com.example;\n"
+        "import org.junit.Test;\n"
+        "import com.speckit.testing.Spec;\n"
+        "public class AdversarialTest {\n"
+        "    @Test\n"
+        '    @Spec(capability = "transfer", rule = "FR-001", description = "对抗-边界")\n'
+        "    public void testFR001Adversarial() {}\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    rg = _load_run_gate_module()
+    result = rg.run(_full_mode_inputs(fr_gate_fixture))
+
+    assert result["status"] == "FAIL"
+    assert result["displayname_match"]["mismatch_count"] == 1
+    assert any("displayname_mismatch" in r for r in result["fail_reasons"])

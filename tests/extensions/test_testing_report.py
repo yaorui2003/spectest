@@ -84,14 +84,6 @@ class TestReportBodySections:
         assert "ImpactReport" in body
         assert ("引用" in body) or ("reference" in body.lower()) or ("不重复" in body)
 
-    def test_body_test_plan_missing_fallback(self):
-        """test-plan.md 为 RECOMMENDED：缺失时契约测试列标注"未生成测试计划"，
-        不阻断报告生成。"""
-        body = _read_body(REPORT_MD.read_text(encoding="utf-8"))
-        assert "test-plan.md" in body
-        assert "未生成测试计划" in body
-        assert "降级" in body
-
 
 # ── Body: spec-trace-matrix template reference ────────────────────────────────
 

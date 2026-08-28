@@ -76,6 +76,21 @@ class IntegrationTest {
 }
 """
 
+AUTOWIRED_JAVA = """\
+package com.example;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+
+class AutowiredTest {
+    @Autowired
+    private AccountService accountService;
+
+    @Test
+    void test() { }
+}
+"""
+
 
 def test_script_exists():
     assert PY_SCRIPT.is_file(), f"脚本不存在: {PY_SCRIPT}"
@@ -118,6 +133,20 @@ def test_springboottest_detected(tmp_path: Path):
     assert finding["type"] == "springboottest"
     assert "IntegrationTest.java" in finding["file"]
     assert "@SpringBootTest" in finding["detail"]
+
+
+def test_autowired_detected(tmp_path: Path):
+    """v1.5: 含 @Autowired -> finding with type=autowired（测试须显式 Mock/构造注入）。"""
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "AutowiredTest.java").write_text(AUTOWIRED_JAVA, encoding="utf-8")
+
+    data = _run_py(src)
+    assert len(data["forbidden_findings"]) == 1
+    finding = data["forbidden_findings"][0]
+    assert finding["type"] == "autowired"
+    assert "AutowiredTest.java" in finding["file"]
+    assert "@Autowired" in finding["detail"]
 
 
 def test_multiple_findings_sorted(tmp_path: Path):
