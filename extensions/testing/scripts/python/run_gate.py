@@ -1013,7 +1013,7 @@ def main() -> int:
     parser.add_argument("--project", required=True, help="项目根目录（执行 mvn / 找 target 报告）")
     parser.add_argument("--feature-dir", required=True, help="feature 目录（如 specs/001-bank-transfer）")
     parser.add_argument("--config", required=True, help="testing-config.yml 路径")
-    parser.add_argument("--check-only", action="store_true", help="只跑步骤 1-7，不写 gate-result.md")
+    parser.add_argument("--check-only", action="store_true", help="只跑步骤 1-8（含 5.5 对抗校验），不写 gate-result.md")
     parser.add_argument(
         "--diff-threshold",
         default=None,

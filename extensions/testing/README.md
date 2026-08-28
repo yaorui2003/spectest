@@ -184,7 +184,7 @@
 
 - **4 命令**：impact（影响分析）/ plan（测试计划）/ gate（门禁）/ report（测试报告），见第一章步骤。
 - **钩子**：`hooks.after_implement` 自动触发，impact 在前、gate 在后（gate 前置检查 impact-report.md，缺失即 FAIL）。
-- **5 脚本**（python-only，输出 JSON，AI 只读不改）：`scan_spec_annotations`（@Spec 扫描+UNSPEC 告警）/ `validate_spec_format`（R 编号连续）/ `parse_test_results`（surefire+JaCoCo+行级 source_lines）/ `scan_test_stack`（禁 PowerMock/@SpringBootTest/@Autowired）/ `run_gate`（门禁编排）。
+- **5 脚本**（python-only，输出 JSON，AI 只读不改）：`scan_spec_annotations`（@Spec 扫描+UNSPEC 告警）/ `validate_spec_format`（FR 段解析 + 编号连续性 + 测试标注子编号）/ `parse_test_results`（surefire+JaCoCo+行级 source_lines）/ `scan_test_stack`（禁 PowerMock/@SpringBootTest/@Autowired）/ `run_gate`（门禁编排）。
 - **4 模板**：java-service（@Spec 注解占位）/ java-unit-test（JUnit4/5 双通道规则标注 + given-when-then）/ test-plan-template（UT 用例 + 阈值）/ spec-trace-matrix（追溯矩阵）。
 - **预设覆盖**：constitution（Principle I/II/III）、spec-template（Functional Requirements 段）、tasks-template（单测先行+双标签+checkpoint `mvn test-compile`）、implement（@Spec 强制+Red 三条件+对抗测试+禁改 test 适配 code）。
 
@@ -200,7 +200,8 @@
 
 **禁用**：PowerMock（覆盖率失真）、`@SpringBootTest` 起容器、`@Autowired`
 （测试须显式 Mock/构造注入，不起 Spring 容器）。缺 JaCoCo/surefire 报告 →
-门禁 FAIL（**不降级**）。唯一降级：非 Java 项目（无 java/mvn）。
+门禁 FAIL（**不降级**）。唯一降级：无 java/mvn 可执行，或 `--project` 指向
+目录无 pom.xml（AI 模块定位错误）。
 
 ---
 

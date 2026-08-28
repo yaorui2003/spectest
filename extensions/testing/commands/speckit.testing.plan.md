@@ -130,10 +130,10 @@ contracts/ / data-model.md），生成**单测用例清单**（标注规则编�
 - unit_pass_rate_min / spec_rule_coverage_min
 
 ## 单测用例（UT-xx）
-| 编号 | 规则 | 路径 | 规则标注（@DisplayName / 测试方法级 @Spec） | 被测方法 | 优先级 |
+| 用例 ID | 规则 | 规则标注 | 场景 | 被测方法 |
 
 ## 排期建议（单测先行）
-| 优先级 | 用例 | 依赖 |
+| 优先级 | 用例 ID | 依赖 |
 
 ## 产物路径
 test_plan_path: specs/<feature>/docs/test-plan.md

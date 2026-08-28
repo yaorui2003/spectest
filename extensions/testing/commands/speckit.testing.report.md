@@ -50,7 +50,7 @@ description: "Speckit Testing 测试报告：校验门禁已执行，汇总测�
 |------|------|
 | 规则编号 | spec.md FR 段 |
 | @Spec 代码位置 | 扫描脚本 JSON 的 `annotated_rules` |
-| 单测规则标注 | 解析单测的 @DisplayName（JUnit5）或测试方法级 @Spec（JUnit4） |
+| 单测规则标注 | 解析单测的 @DisplayName（JUnit5，`FR-xxx-Rm-…`）或测试方法级 @Spec（JUnit4，`rule="FR-xxx-Rm"`） |
 
 追溯矩阵记入 `TraceabilityMatrix`，每行一条 SpecRule，必须覆盖 spec.md 全部
 FR 段规则（无 @Spec 的规则对应位置标注"未实现"）。
@@ -87,11 +87,11 @@ gate_status: PASS
 - Spec 规则覆盖率: 100% (7/7, 阈值 100%, PASS)
 
 ## Spec 追溯矩阵（TraceabilityMatrix）
-| 规则 | @Spec 代码位置 | 单测规则标注 |
-|------|----------------|--------------|
-| FR-001 | AccountService.transfer:42 | FR-001-R1-转账金额为0应抛出INVALID_AMOUNT |
-| FR-002 | OrderService.updateStatus:18 | FR-002-R1-订单状态流转合法 |
-| ... | ... | ... |
+| Spec 规则（FR 顶层锚） | 描述 | @Spec 代码位置 | 单测规则标注 |
+|------------------------|------|----------------|--------------|
+| FR-001 | 金额>0 | AccountService.transfer:42 | FR-001-R1-转账金额为0应抛出INVALID_AMOUNT |
+| FR-002 | 转出账户存在 | OrderService.updateStatus:18 | FR-002-R1-订单状态流转合法 |
+| ... | ... | ... | ... |
 
 ## 影响分析（引用）
 - 产物路径: specs/<feature>/docs/impact-report.md
