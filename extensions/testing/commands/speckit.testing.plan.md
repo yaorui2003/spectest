@@ -127,7 +127,7 @@ contracts/ / data-model.md），生成**单测用例清单**（标注规则编�
 ## 验收阈值（risk_level=<risk_level 或 default>）
 - line_coverage_min / branch_coverage_min / method_coverage_min /
   instruction_coverage_min / complexity_coverage_min
-- unit_pass_rate_min / spec_rule_coverage_min
+- unit_pass_rate_min / spec_rule_coverage_min / require_displayname_match
 
 ## 单测用例（UT-xx）
 | 用例 ID | 规则 | 规则标注 | 场景 | 被测方法 |

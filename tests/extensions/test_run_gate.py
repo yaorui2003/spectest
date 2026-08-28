@@ -645,6 +645,8 @@ def test_run_full_mode_pass(gate_fixture):
     assert "target 清理: 已清理" in md
     assert "- diff coverage: 无 git，回退全量阈值判定" in md
     assert "DisplayName 对齐数: 8 / 8" in md
+    # 通过率阈值行必须显示真实阈值（unit_pass_rate_min），非回落 0%
+    assert "- 通过率: 100% (阈值 >= 100%)" in md
     assert "risk_overrides.high" in md
     # v0.5：gate-result.md 含关键路径对抗覆盖段
     assert "关键路径对抗覆盖" in md
